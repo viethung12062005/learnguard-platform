@@ -19,6 +19,15 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from learnguard.data.features import build_feature_snapshot
+from learnguard.data.ingestion import ingest_oulad
+from learnguard.data.loading import load_snapshot_partitions
+from learnguard.evaluation.data_gate import run_data_gate
+from learnguard.evaluation.ml_gate import run_ml_gate
+from learnguard.evaluation.scorecard import EVAL_SCHEMA_VERSION
+from learnguard.ml.preprocessing import _prepare_split, build_preprocessing_artifact
+from learnguard.ml.training import train_logistic_baseline
+
 from deploy.ml.behavioral_gate import (
     BEHAVIORAL_SCORECARD_FILENAME,
     BEHAVIORAL_SUBJECT,
@@ -30,14 +39,6 @@ from deploy.ml.behavioral_gate import (
     run_behavioral_gate,
 )
 from deploy.ml.data_simulator import generate_oulad_dataset
-from learnguard.data.features import build_feature_snapshot
-from learnguard.data.ingestion import ingest_oulad
-from learnguard.data.loading import load_snapshot_partitions
-from learnguard.evaluation.data_gate import run_data_gate
-from learnguard.evaluation.ml_gate import run_ml_gate
-from learnguard.evaluation.scorecard import EVAL_SCHEMA_VERSION
-from learnguard.ml.preprocessing import _prepare_split, build_preprocessing_artifact
-from learnguard.ml.training import train_logistic_baseline
 
 
 class _InvertedBrokenModel:

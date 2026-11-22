@@ -31,6 +31,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from learnguard.ml.contracts import load_prediction_batch_manifest
+from learnguard.ml.release import load_and_verify_model_release
+
 from deploy.ml.data_simulator import generate_oulad_dataset
 from deploy.ml.drift_monitor import (
     ACTION_QUARANTINE_SAFE_MODE,
@@ -49,8 +52,6 @@ from deploy.ml.retrain_pipeline import (
     load_active_release_pointer,
     run_continual_pipeline,
 )
-from learnguard.ml.contracts import load_prediction_batch_manifest
-from learnguard.ml.release import load_and_verify_model_release
 
 
 def test_continual_learning_all_five_scenarios_and_rollback_end_to_end(

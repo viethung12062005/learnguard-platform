@@ -21,8 +21,6 @@ from dataclasses import fields
 from pathlib import Path
 
 import pandas as pd
-from deploy.ml.data_simulator import generate_oulad_dataset
-from deploy.ml.retrain_pipeline import run_continual_pipeline
 from fastapi.testclient import TestClient
 from learnguard.ml.scoring import (
     PREDICTION_COLUMNS,
@@ -42,6 +40,9 @@ from learnguard_backend.services.student_keys import (
     pseudonymous_key as be_pseudonymous_key,
 )
 from learnguard_backend.settings import BackendSettings
+
+from deploy.ml.data_simulator import generate_oulad_dataset
+from deploy.ml.retrain_pipeline import run_continual_pipeline
 
 
 def test_student_key_contract_parity_between_ml_and_backend() -> None:

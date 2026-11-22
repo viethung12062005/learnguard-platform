@@ -69,19 +69,6 @@ _PLATFORM_ROOT = _THIS_DIR.parent.parent
 if str(_PLATFORM_ROOT) not in sys.path:
     sys.path.insert(0, str(_PLATFORM_ROOT))
 
-from deploy.ml.behavioral_gate import (
-    publish_all_evaluation_scorecards,
-    run_behavioral_gate,
-)
-from deploy.ml.data_simulator import SCENARIOS, generate_oulad_dataset
-from deploy.ml.drift_monitor import (
-    DECISION_DRIFT_RETRAIN,
-    DECISION_NO_DRIFT,
-    DECISION_QUALITY_FAILURE,
-    DriftMonitor,
-    DriftReport,
-    publish_drift_report,
-)
 from learnguard.data.features import KEYS, build_feature_snapshot
 from learnguard.data.ingestion import ingest_oulad
 from learnguard.data.leakage import LeakageAuditor
@@ -149,6 +136,20 @@ from learnguard.ml.training import (
     train_logistic_baseline,
 )
 from learnguard.settings import CUTOFF_DAY
+
+from deploy.ml.behavioral_gate import (
+    publish_all_evaluation_scorecards,
+    run_behavioral_gate,
+)
+from deploy.ml.data_simulator import SCENARIOS, generate_oulad_dataset
+from deploy.ml.drift_monitor import (
+    DECISION_DRIFT_RETRAIN,
+    DECISION_NO_DRIFT,
+    DECISION_QUALITY_FAILURE,
+    DriftMonitor,
+    DriftReport,
+    publish_drift_report,
+)
 
 ACTIVE_RELEASE_FILENAME = "active_release.json"
 
