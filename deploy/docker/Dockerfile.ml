@@ -47,13 +47,15 @@ WORKDIR /app
 # Apply latest Debian security patches (e.g. zlib1g), remove system setuptools/ensurepip outside /opt/venv, and create unprivileged user (UID/GID 10001)
 RUN apt-get update && \
     apt-get upgrade -y --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/* /usr/local/lib/python*/ensurepip /usr/local/lib/python*/site-packages/setuptools* /usr/lib/python*/dist-packages/setuptools* && \
+    rm -rf /var/lib/apt/lists/* && \
+    find /usr /lib -name "*setuptools*" -exec rm -rf {} + 2>/dev/null || true && \
     groupadd --gid 10001 learnguard && \
     useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learnguard && \
     mkdir -p /tmp/learnguard-matplotlib /mnt/data/oulad /mnt/data/artifacts && \
     chown -R learnguard:learnguard /tmp/learnguard-matplotlib /mnt/data
 
 COPY --from=builder /opt/venv /opt/venv
+RUN rm -rf /opt/venv/lib/python*/site-packages/pip* /opt/venv/lib/python*/site-packages/setuptools* /opt/venv/lib/python*/site-packages/wheel*
 COPY src ./src
 COPY db ./db
 

@@ -42,11 +42,15 @@ WORKDIR /app
 # Remove system setuptools/wheel/ensurepip outside /opt/venv so Trivy does not flag Debian's base python3-setuptools
 RUN apt-get update && \
     apt-get upgrade -y --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/* /usr/local/lib/python*/ensurepip /usr/local/lib/python*/site-packages/setuptools* /usr/lib/python*/dist-packages/setuptools* && \
+    rm -rf /var/lib/apt/lists/* && \
+    find /usr /lib -name "*setuptools*" -exec rm -rf {} + 2>/dev/null || true && \
     groupadd --gid 10001 learnguard && \
     useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learnguard
 
 COPY --from=builder /opt/venv /opt/venv
+RUN find /opt/venv -name "setuptools-70*" -exec rm -rf {} + 2>/dev/null || true && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade "setuptools>=78.1.1" && \
+    rm -rf /opt/venv/lib/python*/site-packages/pip* /opt/venv/lib/python*/site-packages/setuptools* /opt/venv/lib/python*/site-packages/wheel*
 COPY alembic.ini ./
 COPY src ./src
 COPY migrations ./migrations
