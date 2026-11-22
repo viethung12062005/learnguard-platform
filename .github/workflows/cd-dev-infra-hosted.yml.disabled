@@ -1,0 +1,159 @@
+name: CD · dev · infrastructure (GitHub-hosted)
+
+# CD trên runner của GitHub — KHÔNG cần máy bạn bật.
+#
+# Cần MỘT identity Azure có role Contributor trên RG learn-guard-dev.
+# Hai cách xác thực, chọn bằng input `auth_method`:
+#
+#   sp_secret → secret AZURE_CREDENTIALS (JSON của service principal)
+#   oidc      → vars AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID
+#               + federated credential (không lưu secret nào)
+#
+# Lưu ý: role FSO-SandboxOps KHÔNG tạo/gán được identity → phải do Admin cấp
+# (xem runbooks/admin-requests.md §1). Nếu bạn đã có SP với quyền sẵn thì dùng luôn.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Hành động"
+        type: choice
+        options: [plan, apply]
+        default: plan
+      auth_method:
+        description: "Cách xác thực Azure"
+        type: choice
+        options: [sp_secret, oidc]
+        default: sp_secret
+
+permissions:
+  contents: read
+  id-token: write # cho OIDC; không ảnh hưởng khi dùng sp_secret
+
+concurrency:
+  group: cd-dev-infra
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+  TF_VERSION: "1.16.6"
+
+jobs:
+  plan:
+    name: Terraform plan + guardrail
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/env/dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (service principal secret)
+        if: inputs.auth_method == 'sp_secret'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Azure login (OIDC)
+        if: inputs.auth_method == 'oidc'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Xác nhận danh tính
+        run: az account show --query "{subscription:name, user:user.name}" -o table
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive ../..
+
+      - name: terraform init
+        run: |
+          terraform init -input=false -no-color \
+            -backend-config="resource_group_name=${{ vars.TF_BACKEND_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TF_BACKEND_SA }}" \
+            -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}"
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+      - name: terraform plan
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Guardrail
+        run: |
+          terraform show -json tfplan > plan.json
+          python3 ../../../scripts/guardrails/check_plan.py plan.json
+
+      - name: Lưu plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-dev
+          path: |
+            infra/env/dev/tfplan
+            infra/env/dev/plan.json
+          retention-days: 3
+
+  apply:
+    name: Terraform apply
+    needs: plan
+    if: github.event.inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: infra/env/dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tải plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-dev
+          path: infra/env/dev
+
+      - name: Azure login (service principal secret)
+        if: inputs.auth_method == 'sp_secret'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Azure login (OIDC)
+        if: inputs.auth_method == 'oidc'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform init
+        run: |
+          terraform init -input=false -no-color \
+            -backend-config="resource_group_name=${{ vars.TF_BACKEND_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TF_BACKEND_SA }}" \
+            -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}"
+
+      - name: Guardrail lại trên artifact
+        run: python3 ../../../scripts/guardrails/check_plan.py plan.json
+
+      - name: terraform apply
+        run: terraform apply -input=false -no-color tfplan
+
+      - name: Xuất output
+        run: terraform output -no-color

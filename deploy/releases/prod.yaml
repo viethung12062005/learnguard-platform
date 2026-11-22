@@ -1,0 +1,41 @@
+# Release manifest — môi trường production trên DigitalOcean Droplet VM & GHCR (gitops).
+#
+# Ghi lại CHÍNH XÁC bộ container image (@sha256 immutable digest) và model release đang chạy.
+# Cập nhật tự động bởi workflow `.github/workflows/cd-digitalocean-prod.yml` hoặc PR đã qua review.
+
+schema: release-manifest.v2
+environment: prod
+target_platform: digitalocean-droplet-compose
+updated_at: "2026-11-23T00:00:00Z"
+updated_by: "github-actions[bot]"
+
+components:
+  api:
+    image: "ghcr.io/viethung12062005/learnguard-api@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    source_repo: "ntk223/BE-MLOPS"
+    source_commit: "a2bae92"
+  ml_batch:
+    image: "ghcr.io/viethung12062005/learnguard-ml@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    source_repo: "ntk223/Data-ML-MLOPS"
+    source_commit: "72c96cd"
+  frontend:
+    image: "ghcr.io/viethung12062005/learnguard-fe@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    source_repo: "ntk223/FE-MLOPS"
+    source_commit: "0f70e14"
+
+active_model_release:
+  release_id: "release-v2-prod-cutoff27"
+  model_version: "logistic_baseline_v2+linear_shap"
+  snapshot_version: "m2-v1-cutoff27-335ebeff10e4"
+  cutoff_day: 27
+  threshold_policy: "validation_alert_budget_scalar_v1"
+  target_alert_fraction: 0.20
+  active_release_pointer: "/opt/learnguard/data/artifacts/model-releases/active_release.json"
+
+infra:
+  provider: digitalocean
+  region: sgp1
+  droplet_size: s-4vcpu-8gb
+  compose_file: deploy/digitalocean/docker-compose.prod.yml
+  terraform_dir: infra/digitalocean
+  rollback_state_file: /opt/learnguard/deploy/digitalocean/last_good_release.env

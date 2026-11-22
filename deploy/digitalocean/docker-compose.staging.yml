@@ -1,0 +1,36 @@
+# LearnGuard — Staging / CI Verification Override for Docker Compose
+# Usage:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml up -d
+
+services:
+  postgres:
+    mem_limit: 768m
+    cpus: 1.0
+
+  api:
+    build:
+      context: ../../../BE-MLOPS
+      dockerfile: ../learnguard-platform/deploy/docker/Dockerfile.api
+    environment:
+      CORS_ORIGINS: "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
+    mem_limit: 512m
+    cpus: 0.75
+
+  frontend:
+    build:
+      context: ../../../FE-MLOPS
+      dockerfile: ../learnguard-platform/deploy/docker/Dockerfile.fe
+      args:
+        VITE_BACKEND_API_URL: /api
+        VITE_USE_MOCK: "false"
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    mem_limit: 192m
+    cpus: 0.5
+
+  ml-worker:
+    build:
+      context: ../../../Data-ML-MLOPS
+      dockerfile: ../learnguard-platform/deploy/docker/Dockerfile.ml
+    mem_limit: 2048m
+    cpus: 1.5

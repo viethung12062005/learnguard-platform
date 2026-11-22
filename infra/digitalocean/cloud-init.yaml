@@ -1,0 +1,127 @@
+#cloud-config
+# =============================================================================
+# LearnGuard — DigitalOcean Droplet Cloud-Init Bootstrap (Ubuntu 24.04 LTS)
+#
+# Automatically executed on first boot:
+#   1. Creates non-root operations user `lgops` with Docker & passwordless sudo
+#   2. Hardens SSH daemon (key-only, no root login)
+#   3. Configures UFW host firewall + Fail2ban
+#   4. Installs Docker Engine & Docker Compose v2 plugin
+#   5. Prepares `/opt/learnguard` directory layout and weekly ML drift systemd timer
+# =============================================================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - ufw
+  - fail2ban
+  - jq
+  - rsync
+  - git
+  - unattended-upgrades
+
+users:
+  - default
+  - name: lgops
+    gecos: LearnGuard MLOps Operator
+    shell: /bin/bash
+    groups: [sudo, docker]
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - ${operator_ssh_public_key}
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-learnguard-hardening.conf
+    permissions: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      MaxAuthTries 3
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+      AllowUsers lgops
+
+  - path: /etc/systemd/system/learnguard-ml-batch.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=LearnGuard Weekly Drift Detection & Continual Retraining Pipeline
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      User=lgops
+      WorkingDirectory=/opt/learnguard/deploy/digitalocean
+      ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml --profile batch run --rm ml-worker --mode auto
+      StandardOutput=journal
+      StandardError=journal
+
+  - path: /etc/systemd/system/learnguard-ml-batch.timer
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Run LearnGuard Drift & Retraining Pipeline every Monday at 06:30 UTC
+
+      [Timer]
+      OnCalendar=Mon *-*-* 06:30:00
+      Persistent=true
+      RandomizedDelaySec=120
+
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - mkdir -p /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - chmod a+r /etc/apt/keyrings/docker.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update -y
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - usermod -aG docker lgops
+  - systemctl enable --now docker
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp comment 'SSH Operator and CI'
+  - ufw allow 80/tcp comment 'HTTP Nginx Reverse Proxy'
+  - ufw allow 443/tcp comment 'HTTPS Nginx Reverse Proxy'
+  - ufw --force enable
+  - systemctl enable --now fail2ban
+  - systemctl reload ssh || systemctl reload sshd
+  - |
+    set -euo pipefail
+    DATA_ROOT="/opt/learnguard/data"
+    mkdir -p "${DATA_ROOT}"
+    DO_VOL="/dev/disk/by-id/scsi-0DO_Volume_learnguard-${environment}-data-vol"
+    if [ ! -e "${DO_VOL}" ]; then
+      DO_VOL="$(ls /dev/disk/by-id/scsi-0DO_Volume_* 2>/dev/null | head -n 1 || true)"
+    fi
+    if [ -n "${DO_VOL}" ] && [ -e "${DO_VOL}" ]; then
+      if ! blkid "${DO_VOL}" >/dev/null 2>&1; then
+        mkfs.ext4 -F "${DO_VOL}"
+      fi
+      if ! grep -qs " ${DATA_ROOT} " /etc/fstab; then
+        echo "${DO_VOL} ${DATA_ROOT} ext4 defaults,nofail,discard,noatime 0 2" >> /etc/fstab
+      fi
+      if ! mountpoint -q "${DATA_ROOT}"; then
+        mount "${DATA_ROOT}"
+      fi
+    fi
+  - mkdir -p /opt/learnguard/deploy/digitalocean /opt/learnguard/deploy/db /opt/learnguard/deploy/ml /opt/learnguard/deploy/releases
+  - mkdir -p /opt/learnguard/scripts/cd /opt/learnguard/scripts/do
+  - mkdir -p /opt/learnguard/data/oulad /opt/learnguard/data/backups
+  - mkdir -p /opt/learnguard/data/artifacts/ingestion_m1 /opt/learnguard/data/artifacts/feature_snapshot_m2
+  - mkdir -p /opt/learnguard/data/artifacts/preprocessing-runs /opt/learnguard/data/artifacts/model-runs
+  - mkdir -p /opt/learnguard/data/artifacts/model-releases /opt/learnguard/data/artifacts/prediction-batches
+  - mkdir -p /opt/learnguard/data/artifacts/evaluations /opt/learnguard/data/artifacts/drift-reports
+  - chown -R lgops:lgops /opt/learnguard
+  - chown -R 10001:10001 /opt/learnguard/data/oulad /opt/learnguard/data/artifacts
+  - systemctl daemon-reload
+  - systemctl enable --now learnguard-ml-batch.timer

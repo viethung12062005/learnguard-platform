@@ -1,0 +1,6 @@
+# Copy sang backend.hcl rồi điền giá trị do scripts/bootstrap/state-backend.sh in ra.
+# backend.hcl KHÔNG được commit (xem .gitignore).
+resource_group_name  = "learn-guard-tfstate"
+storage_account_name = "<output cua bootstrap script>"
+container_name       = "tfstate"
+key                  = "dev.terraform.tfstate"

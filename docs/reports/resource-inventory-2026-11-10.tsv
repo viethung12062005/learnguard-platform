@@ -1,0 +1,37 @@
+ca-lg-dev-api	Microsoft.App/containerApps
+caj-lg-dev-ml	Microsoft.App/jobs
+cae-lg-dev	Microsoft.App/managedEnvironments
+osdisk-vm-az-lg-jump	Microsoft.Compute/disks
+vm-az-lg-jump	Microsoft.Compute/virtualMachines
+vm-az-lg-jump/AzurePolicyforLinux	Microsoft.Compute/virtualMachines/extensions
+vm-az-lg-jump/AzureMonitorLinuxAgent	Microsoft.Compute/virtualMachines/extensions
+vm-az-lg-jump/MDE.Linux	Microsoft.Compute/virtualMachines/extensions
+acrdevcjalc	Microsoft.ContainerRegistry/registries
+psql-lg-dev-cjalc	Microsoft.DBforPostgreSQL/flexibleServers
+shutdown-computevm-vm-az-lg-jump	Microsoft.DevTestLab/schedules
+appi-lg-dev	Microsoft.Insights/components
+kv-lg-dev-cjalc	Microsoft.KeyVault/vaults
+id-lg-dev-api	Microsoft.ManagedIdentity/userAssignedIdentities
+id-lg-dev-job	Microsoft.ManagedIdentity/userAssignedIdentities
+pe-stlgdevcjalc-file.nic.5d254f8e-9494-4074-8c51-f405f6ad1958	Microsoft.Network/networkInterfaces
+nic-vm-lg-dev-jump	Microsoft.Network/networkInterfaces
+pe-kv-lg-dev-cjalc.nic.e3cba8bc-792e-42a9-ba8b-077a52797b2f	Microsoft.Network/networkInterfaces
+nsg-snet-pg	Microsoft.Network/networkSecurityGroups
+nsg-snet-pe	Microsoft.Network/networkSecurityGroups
+nsg-snet-cae	Microsoft.Network/networkSecurityGroups
+nsg-snet-jump	Microsoft.Network/networkSecurityGroups
+privatelink.vaultcore.azure.net	Microsoft.Network/privateDnsZones
+privatelink.file.core.windows.net	Microsoft.Network/privateDnsZones
+private.postgres.database.azure.com	Microsoft.Network/privateDnsZones
+privatelink.file.core.windows.net/link-files	Microsoft.Network/privateDnsZones/virtualNetworkLinks
+private.postgres.database.azure.com/link-postgres	Microsoft.Network/privateDnsZones/virtualNetworkLinks
+privatelink.vaultcore.azure.net/link-keyvault	Microsoft.Network/privateDnsZones/virtualNetworkLinks
+pe-stlgdevcjalc-file	Microsoft.Network/privateEndpoints
+pe-kv-lg-dev-cjalc	Microsoft.Network/privateEndpoints
+pip-vm-lg-dev-jump	Microsoft.Network/publicIPAddresses
+vnet-lg-dev	Microsoft.Network/virtualNetworks
+log-lg-dev	Microsoft.OperationalInsights/workspaces
+stlgdevcjalc	Microsoft.Storage/storageAccounts
+swa-lg-dev	Microsoft.Web/staticSites
+Failure Anomalies - appi-lg-dev	microsoft.alertsmanagement/smartDetectorAlertRules
+Application Insights Smart Detection	microsoft.insights/actiongroups

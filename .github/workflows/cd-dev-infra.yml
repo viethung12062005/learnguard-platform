@@ -1,0 +1,128 @@
+name: CD · dev · infrastructure
+
+# CD chạy trên self-hosted runner để tái dùng `az login` của người vận hành.
+# Không cần service principal / role assignment (bị chặn bởi role FSO-SandboxOps).
+# Khi Admin cấp UAMI + federated credential, chuyển sang cd-dev-infra-oidc.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Hành động"
+        type: choice
+        options: [plan, apply]
+        default: plan
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/cd-dev-infra.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-dev-infra
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+  WORKDIR: infra/env/dev
+
+jobs:
+  plan:
+    name: Terraform plan + guardrail
+    runs-on: [self-hosted, Windows, learnguard]
+    defaults:
+      run:
+        shell: powershell
+        working-directory: infra/env/dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Kiểm tra đăng nhập Azure
+        run: |
+          $ErrorActionPreference = "Stop"
+          az account show --query "{subscription:name, user:user.name}" -o table
+          if ($LASTEXITCODE -ne 0) {
+            throw "Runner chưa có phiên az login. Chạy 'az login' bằng đúng tài khoản chạy runner."
+          }
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive ../..
+
+      - name: terraform init
+        run: |
+          $ErrorActionPreference = "Stop"
+          terraform init -input=false -no-color -backend-config="resource_group_name=${{ vars.TF_BACKEND_RG }}" -backend-config="storage_account_name=${{ vars.TF_BACKEND_SA }}" -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" -backend-config="key=${{ vars.TF_STATE_KEY }}"
+          if ($LASTEXITCODE -ne 0) { throw "terraform init failed" }
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+      - name: terraform plan
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          if ($LASTEXITCODE -ne 0) { throw "terraform plan failed" }
+
+      - name: Guardrail — chặn resource cần quyền Admin
+        run: |
+          terraform show -json tfplan | Out-File -FilePath plan.json -Encoding utf8
+          python ..\..\..\scripts\guardrails\check_plan.py plan.json
+          if ($LASTEXITCODE -ne 0) { throw "Guardrail failed — plan chứa resource không được phép" }
+
+      - name: Lưu plan cho bước apply
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-dev
+          path: |
+            infra/env/dev/tfplan
+            infra/env/dev/plan.json
+          retention-days: 3
+
+  apply:
+    name: Terraform apply
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
+    runs-on: [self-hosted, Windows, learnguard]
+    environment: dev
+    defaults:
+      run:
+        shell: powershell
+        working-directory: infra/env/dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tải plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-dev
+          path: infra/env/dev
+
+      - name: Kiểm tra đăng nhập Azure
+        run: |
+          $ErrorActionPreference = "Stop"
+          az account show --query "{subscription:name, user:user.name}" -o table
+          if ($LASTEXITCODE -ne 0) { throw "Runner chưa có phiên az login." }
+
+      - name: terraform init
+        run: |
+          terraform init -input=false -no-color -backend-config="resource_group_name=${{ vars.TF_BACKEND_RG }}" -backend-config="storage_account_name=${{ vars.TF_BACKEND_SA }}" -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" -backend-config="key=${{ vars.TF_STATE_KEY }}"
+          if ($LASTEXITCODE -ne 0) { throw "terraform init failed" }
+
+      - name: Guardrail lại trên artifact
+        run: |
+          python ..\..\..\scripts\guardrails\check_plan.py plan.json
+          if ($LASTEXITCODE -ne 0) { throw "Guardrail failed" }
+
+      - name: terraform apply
+        run: |
+          terraform apply -input=false -no-color tfplan
+          if ($LASTEXITCODE -ne 0) { throw "terraform apply failed" }
+
+      - name: Xuất output
+        run: terraform output -no-color

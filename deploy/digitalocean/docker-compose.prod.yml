@@ -1,0 +1,261 @@
+# LearnGuard — Production Docker Compose Stack for DigitalOcean Droplet VM
+# Reference Architecture: docs/architecture/digitalocean-target-architecture.md (ADR-0008)
+#
+# Network Topology:
+#   - lg_frontend_net (bridge): DMZ connecting frontend (Nginx) and api (FastAPI), plus outbound HTTPS for OpenRouter LLM.
+#   - lg_backend_net (bridge, internal: true): Private Data Plane connecting api, postgres, ml-worker, ollama, prometheus.
+#     PostgreSQL has ZERO host port bindings and NO external network route.
+
+name: learnguard-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lg-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-lgadmin}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-learnguard}
+      LG_API_PASSWORD: ${LG_API_PASSWORD:?LG_API_PASSWORD is required}
+      LG_ML_WRITER_PASSWORD: ${LG_ML_WRITER_PASSWORD:?LG_ML_WRITER_PASSWORD is required}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/10-init-db.sh:ro
+      - ../db/roles.sql:/opt/learnguard/db/roles.sql:ro
+    networks:
+      - lg_backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-lgadmin} -d ${POSTGRES_DB:-learnguard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    mem_limit: 1536m
+    cpus: 1.5
+    security_opt:
+      - no-new-privileges:true
+
+  db-migrate:
+    image: ${LG_API_IMAGE:-ghcr.io/ntk223/learnguard-api:latest}
+    container_name: lg-db-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_ADMIN_USER:-lgadmin}:${POSTGRES_ADMIN_PASSWORD}@postgres:5432/${POSTGRES_DB:-learnguard}
+      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:-lgadmin}
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-learnguard}
+      LG_API_PASSWORD: ${LG_API_PASSWORD}
+      LG_ML_WRITER_PASSWORD: ${LG_ML_WRITER_PASSWORD}
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - lg_backend_net
+    mem_limit: 512m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    image: ${LG_API_IMAGE:-ghcr.io/ntk223/learnguard-api:latest}
+    container_name: lg-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://lg_api:${LG_API_PASSWORD}@postgres:5432/${POSTGRES_DB:-learnguard}
+      LEARNGUARD_PG_DSN: postgresql://lg_api:${LG_API_PASSWORD}@postgres:5432/${POSTGRES_DB:-learnguard}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,https://learnguard.example.com}
+      LLM_MODEL: ${LLM_MODEL:-openrouter/google/gemini-2.5-flash:free}
+      LLM_API_BASE: ${LLM_API_BASE:-https://openrouter.ai/api/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-ollama/qwen2.5:3b}
+      LLM_FALLBACK_API_BASE: ${LLM_FALLBACK_API_BASE:-http://ollama:11434}
+      LLM_FALLBACK_API_KEY: ${LLM_FALLBACK_API_KEY:-ollama}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LLM_FALLBACK_TIMEOUT_SECONDS: ${LLM_FALLBACK_TIMEOUT_SECONDS:-120}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-1}
+      LLM_MAX_INPUT_TOKENS: ${LLM_MAX_INPUT_TOKENS:-8000}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-1000}
+      EVALUATIONS_DIR: /mnt/data/artifacts/evaluations
+      OULAD_DATA_DIR: /mnt/data/oulad
+    volumes:
+      - ${LG_DATA_ROOT:-/opt/learnguard/data}/artifacts/evaluations:/mnt/data/artifacts/evaluations:ro
+      - ${LG_DATA_ROOT:-/opt/learnguard/data}/artifacts:/mnt/data/artifacts:ro
+      - ${LG_DATA_ROOT:-/opt/learnguard/data}/oulad:/mnt/data/oulad:ro
+    networks:
+      - lg_frontend_net
+      - lg_backend_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    mem_limit: 1024m
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+
+  frontend:
+    image: ${LG_FE_IMAGE:-ghcr.io/ntk223/learnguard-fe:latest}
+    container_name: lg-frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      # Enable 443 port mapping when TLS certificates and HTTPS server block are mounted:
+      # - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ../docker/nginx.fe.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - lg_frontend_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:80/healthz | grep -q 'ok'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 256m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+
+  ml-worker:
+    image: ${LG_ML_IMAGE:-ghcr.io/ntk223/learnguard-ml:latest}
+    container_name: lg-ml-worker
+    profiles:
+      - batch
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      LEARNGUARD_PG_DSN: postgresql://lg_ml_writer:${LG_ML_WRITER_PASSWORD}@postgres:5432/${POSTGRES_DB:-learnguard}
+      LEARNGUARD_DATA_DIR: /mnt/data/oulad
+      LEARNGUARD_ARTIFACTS_DIR: /mnt/data/artifacts
+      LEARNGUARD_CUTOFF_DAY: ${LEARNGUARD_CUTOFF_DAY:-27}
+      MPLCONFIGDIR: /tmp/learnguard-matplotlib
+    volumes:
+      - ${LG_DATA_ROOT:-/opt/learnguard/data}/oulad:/mnt/data/oulad:rw
+      - ${LG_DATA_ROOT:-/opt/learnguard/data}/artifacts:/mnt/data/artifacts:rw
+      - ../ml:/opt/learnguard/deploy/ml:ro
+    entrypoint: ["python", "/opt/learnguard/deploy/ml/retrain_pipeline.py"]
+    command: ["--mode", "auto"]
+    networks:
+      - lg_backend_net
+    mem_limit: 3072m
+    cpus: 2.0
+    security_opt:
+      - no-new-privileges:true
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: lg-ollama
+    profiles:
+      - llm-fallback
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - lg_backend_net
+      - lg_frontend_net
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    mem_limit: 3072m
+    cpus: 2.0
+    security_opt:
+      - no-new-privileges:true
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: lg-prometheus
+    profiles:
+      - observability
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    networks:
+      - lg_backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:9090/-/healthy | grep -q 'Prometheus'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 512m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: lg-node-exporter
+    profiles:
+      - observability
+    restart: unless-stopped
+    networks:
+      - lg_backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:9100/metrics >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 128m
+    cpus: 0.25
+    security_opt:
+      - no-new-privileges:true
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: lg-cadvisor
+    profiles:
+      - observability
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - lg_backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz | grep -q 'ok'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    mem_limit: 256m
+    cpus: 0.5
+
+networks:
+  lg_frontend_net:
+    driver: bridge
+    name: lg_frontend_net
+  lg_backend_net:
+    driver: bridge
+    name: lg_backend_net
+    internal: true
+
+volumes:
+  pg_data:
+    name: lg_pg_data
+  ollama_models:
+    name: lg_ollama_models
+  prometheus_data:
+    name: lg_prometheus_data

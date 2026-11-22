@@ -1,0 +1,24 @@
+# =============================================================================
+# LearnGuard — DigitalOcean Terraform Variables Example
+# Copy to `terraform.tfvars` (never commit `terraform.tfvars` to Git)
+# =============================================================================
+
+environment          = "prod"
+region               = "sgp1"
+vpc_ip_range         = "10.116.0.0/20"
+droplet_size         = "s-4vcpu-8gb"
+droplet_image        = "ubuntu-24-04-x64"
+data_volume_size_gb  = 50
+enable_backups       = true
+
+# Register your SSH key in DigitalOcean Control Panel -> Settings -> Security
+ssh_key_fingerprints = [
+  "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+]
+
+operator_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIReplaceWithOperatorAndGitHubActionsDeployPublicKey lgops@learnguard"
+
+# Restrict port 22 to operator workstation IPs and GitHub Actions runner CIDR ranges
+allowed_ssh_cidrs = [
+  "203.0.113.10/32"
+]

@@ -1,0 +1,7 @@
+{
+  "manifest_sha256": "6abdaae5ab251562800c99a4158a999d3d2a428cdadad814e8e74fb2224c861d",
+  "model_artifact_sha256": "2216735707c996b2d4c570bf059eab7fa5681a142840e1eae275ea6bb955a5bf",
+  "model_semantic_version": "logreg-v1:9b7e9a23:75753818:254f0dad",
+  "schema_version": "logistic-model-v1",
+  "training_report_sha256": "9ec4722ba404cd9df84726c03ab29bbffa70b9e5f69425cf39159f3fd044dc82"
+}

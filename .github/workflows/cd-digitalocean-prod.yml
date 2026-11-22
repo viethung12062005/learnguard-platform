@@ -1,0 +1,168 @@
+# =============================================================================
+# LearnGuard — Production CD Workflow to DigitalOcean Droplet VM
+# Reference: ADR-0008 & ADR-0009
+#
+# Deploys pinned @sha256 images from `deploy/releases/prod.yaml` (or explicit
+# workflow_dispatch inputs) to `/opt/learnguard` on the DigitalOcean VM via SSH.
+# Executes pre-deploy DB backup, Alembic migration, rolling update, E2E smoke
+# test, and automatic rollback (`rollback-do.sh`) if any check fails.
+# =============================================================================
+name: CD — Deploy Production to DigitalOcean VM
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_image:
+        description: "Override API image (@sha256 digest). Leave blank to read from deploy/releases/prod.yaml"
+        required: false
+        default: ""
+      fe_image:
+        description: "Override Frontend image (@sha256 digest). Leave blank to read from deploy/releases/prod.yaml"
+        required: false
+        default: ""
+      ml_image:
+        description: "Override ML Worker image (@sha256 digest). Leave blank to read from deploy/releases/prod.yaml"
+        required: false
+        default: ""
+      dry_run:
+        description: "Run deployment in dry-run verification mode without SSH connection"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cd-digitalocean-production
+  cancel-in-progress: false
+
+jobs:
+  resolve-release-manifest:
+    name: "Resolve & Verify Immutable Release Digests"
+    runs-on: ubuntu-latest
+    outputs:
+      api_image: ${{ steps.resolve.outputs.api_image }}
+      fe_image: ${{ steps.resolve.outputs.fe_image }}
+      ml_image: ${{ steps.resolve.outputs.ml_image }}
+    steps:
+      - name: Checkout learnguard-platform
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Parse and verify deploy/releases/prod.yaml
+        id: resolve
+        env:
+          INPUT_API: ${{ inputs.api_image }}
+          INPUT_FE: ${{ inputs.fe_image }}
+          INPUT_ML: ${{ inputs.ml_image }}
+        run: |
+          pip install --no-cache-dir pyyaml
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+
+          manifest = yaml.safe_load(Path("deploy/releases/prod.yaml").read_text(encoding="utf-8"))
+          api_img = os.environ.get("INPUT_API") or manifest["components"]["api"]["image"]
+          fe_img = os.environ.get("INPUT_FE") or manifest["components"]["frontend"]["image"]
+          ml_img = os.environ.get("INPUT_ML") or manifest["components"]["ml_batch"]["image"]
+
+          for label, ref in (("api", api_img), ("frontend", fe_img), ("ml_batch", ml_img)):
+              if "@sha256:" not in ref:
+                  raise SystemExit(f"ERROR: Production image for {label} must use immutable @sha256 digest, got: {ref}")
+
+          gh_out = Path(os.environ["GITHUB_OUTPUT"])
+          with gh_out.open("a", encoding="utf-8") as fh:
+              fh.write(f"api_image={api_img}\n")
+              fh.write(f"fe_image={fe_img}\n")
+              fh.write(f"ml_image={ml_img}\n")
+          PY
+
+  deploy-to-digitalocean:
+    name: "Deploy to DigitalOcean VM (Smoke Test + Auto-Rollback)"
+    needs: [resolve-release-manifest]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout learnguard-platform
+        uses: actions/checkout@v4
+
+      - name: Check DigitalOcean VM credentials
+        id: check_vm
+        env:
+          DO_HOST_VAL: ${{ secrets.DO_HOST }}
+        run: |
+          if [ -n "${DO_HOST_VAL}" ]; then
+            echo "has_host=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_host=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Execute local dry-run deployment verification
+        if: inputs.dry_run == true || steps.check_vm.outputs.has_host == 'false'
+        run: |
+          ./scripts/cd/deploy-do.sh \
+            --dry-run \
+            --api-image "${{ needs.resolve-release-manifest.outputs.api_image }}" \
+            --fe-image "${{ needs.resolve-release-manifest.outputs.fe_image }}" \
+            --ml-image "${{ needs.resolve-release-manifest.outputs.ml_image }}"
+
+      - name: Configure SSH key and known_hosts for DigitalOcean VM
+        if: inputs.dry_run != true && steps.check_vm.outputs.has_host == 'true'
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_PORT: ${{ secrets.DO_PORT || '22' }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${DO_SSH_KEY}" > ~/.ssh/id_do_deploy
+          chmod 600 ~/.ssh/id_do_deploy
+          ssh-keyscan -p "${DO_PORT}" -H "${DO_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Sync deploy/ and scripts/ bundles to DigitalOcean VM (/opt/learnguard)
+        if: inputs.dry_run != true && steps.check_vm.outputs.has_host == 'true'
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER || 'lgops' }}
+          DO_PORT: ${{ secrets.DO_PORT || '22' }}
+        run: |
+          rsync -az --delete \
+            --exclude '.env' \
+            --exclude 'last_good_release.env' \
+            -e "ssh -i ~/.ssh/id_do_deploy -p ${DO_PORT}" \
+            deploy/ "${DO_USER}@${DO_HOST}:/opt/learnguard/deploy/"
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/id_do_deploy -p ${DO_PORT}" \
+            scripts/ "${DO_USER}@${DO_HOST}:/opt/learnguard/scripts/"
+
+      - name: Trigger remote deploy-do.sh with Smoke Test & Auto-Rollback
+        if: inputs.dry_run != true && steps.check_vm.outputs.has_host == 'true'
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER || 'lgops' }}
+          DO_PORT: ${{ secrets.DO_PORT || '22' }}
+          GHCR_PAT: ${{ secrets.GHCR_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          API_IMG: ${{ needs.resolve-release-manifest.outputs.api_image }}
+          FE_IMG: ${{ needs.resolve-release-manifest.outputs.fe_image }}
+          ML_IMG: ${{ needs.resolve-release-manifest.outputs.ml_image }}
+        run: |
+          printf '%s\n' "${GHCR_PAT}" | ssh -i ~/.ssh/id_do_deploy -p "${DO_PORT}" "${DO_USER}@${DO_HOST}" \
+            "docker login ghcr.io -u '${GHCR_USER}' --password-stdin && \
+             chmod +x /opt/learnguard/scripts/cd/*.sh /opt/learnguard/deploy/digitalocean/init-db.sh && \
+             /opt/learnguard/scripts/cd/deploy-do.sh \
+               --compose-dir /opt/learnguard/deploy/digitalocean \
+               --api-image '${API_IMG}' \
+               --fe-image '${FE_IMG}' \
+               --ml-image '${ML_IMG}'"
+
+      - name: Clean up ephemeral SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_do_deploy

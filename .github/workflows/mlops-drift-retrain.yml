@@ -1,0 +1,137 @@
+# =============================================================================
+# LearnGuard — Automated Data Drift Detection & Continual Retraining Pipeline
+# Reference: ADR-0009, ADR-0010 & CMU MLIP Lec 4 (Q19-Q22) / Lec 5-6
+#
+# Runs weekly (Monday 06:30 UTC) or on manual workflow_dispatch with selectable
+# drift scenario (`auto`, `force-retrain`, `baseline_no_drift`,
+# `gradual_covariate_drift`, `new_semester_cohort`, `corrupted_feed_quarantine`,
+# `rejected_challenger_guard`).
+# =============================================================================
+name: MLOps — Drift Detection & Continual Retraining Pipeline
+
+on:
+  schedule:
+    - cron: "30 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Drift / Retraining execution mode or simulation scenario"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - force-retrain
+          - baseline_no_drift
+          - gradual_covariate_drift
+          - new_semester_cohort
+          - corrupted_feed_quarantine
+          - rejected_challenger_guard
+      trigger_remote_vm:
+        description: "Also trigger ml-worker batch pipeline on production DigitalOcean VM (if DO_HOST secret is set)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  drift-triage-and-retrain:
+    name: "Run Drift Monitor, Multi-Gate Retraining & Publish Scorecards"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout learnguard-platform
+        uses: actions/checkout@v4
+        with:
+          path: learnguard-platform
+
+      - name: Checkout Data-ML-MLOPS
+        uses: actions/checkout@v4
+        with:
+          repository: ntk223/Data-ML-MLOPS
+          ref: 72c96cd
+          path: Data-ML-MLOPS
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ML & Drift Pipeline Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pandas pyarrow scikit-learn scipy joblib shap threadpoolctl matplotlib pyyaml pytest
+          if [ -f Data-ML-MLOPS/pyproject.toml ]; then
+            pip install -e Data-ML-MLOPS
+          fi
+
+      - name: Run Continual Retraining & Drift Triage Pipeline
+        working-directory: learnguard-platform
+        env:
+          SCENARIO: ${{ inputs.scenario || 'auto' }}
+          OUT_DIR: /tmp/lg-mlops-run/artifacts
+        run: |
+          mkdir -p "${OUT_DIR}"
+          if [ "${SCENARIO}" = "auto" ] || [ "${SCENARIO}" = "force-retrain" ]; then
+            if [ -f ../Data-ML-MLOPS/data/oulad/archive/studentInfo.csv ]; then
+              python deploy/ml/retrain_pipeline.py \
+                --mode "${SCENARIO}" \
+                --data-dir ../Data-ML-MLOPS/data/oulad/archive \
+                --artifacts-dir "${OUT_DIR}"
+            else
+              python deploy/ml/retrain_pipeline.py \
+                --mode simulate \
+                --scenario all \
+                --artifacts-dir "${OUT_DIR}"
+            fi
+          else
+            python deploy/ml/retrain_pipeline.py \
+              --mode simulate \
+              --scenario "${SCENARIO}" \
+              --artifacts-dir "${OUT_DIR}"
+          fi
+
+      - name: Upload Drift Reports (drift-report.v1) & Evaluation Scorecards (eval-report.v1)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: learnguard-mlops-reports-${{ github.run_id }}
+          path: /tmp/lg-mlops-run/artifacts/**
+          retention-days: 30
+
+      - name: Check DigitalOcean VM credentials
+        id: check_vm
+        if: inputs.trigger_remote_vm == true
+        env:
+          DO_HOST_VAL: ${{ secrets.DO_HOST }}
+        run: |
+          if [ -n "${DO_HOST_VAL}" ]; then
+            echo "has_host=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_host=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger Batch Drift/Retrain Worker on DigitalOcean VM (Optional)
+        if: inputs.trigger_remote_vm == true && steps.check_vm.outputs.has_host == 'true'
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER || 'lgops' }}
+          DO_PORT: ${{ secrets.DO_PORT || '22' }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          SCENARIO: ${{ inputs.scenario || 'auto' }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${DO_SSH_KEY}" > ~/.ssh/id_do_mlops
+          chmod 600 ~/.ssh/id_do_mlops
+          ssh-keyscan -p "${DO_PORT}" -H "${DO_HOST}" >> ~/.ssh/known_hosts
+          if [ "${SCENARIO}" = "auto" ] || [ "${SCENARIO}" = "force-retrain" ]; then
+            REMOTE_ARGS="--mode '${SCENARIO}'"
+          else
+            REMOTE_ARGS="--mode simulate --scenario '${SCENARIO}' --artifacts-dir /tmp/lg-sim-artifacts"
+          fi
+          ssh -i ~/.ssh/id_do_mlops -p "${DO_PORT}" "${DO_USER}@${DO_HOST}" \
+            "cd /opt/learnguard/deploy/digitalocean && \
+             docker compose -f docker-compose.prod.yml --profile batch run --rm ml-worker ${REMOTE_ARGS}"
+          rm -f ~/.ssh/id_do_mlops

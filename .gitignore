@@ -1,0 +1,41 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+plan.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Cấu hình môi trường cục bộ (KHÔNG commit)
+terraform.tfvars
+*.auto.tfvars
+backend.hcl
+
+# Secrets / local
+.env
+.env.*
+!.env.prod.example
+!.env.example
+*.pem
+*.key
+
+# Python / Test caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

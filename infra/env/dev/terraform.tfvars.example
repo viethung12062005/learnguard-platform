@@ -1,0 +1,13 @@
+# Copy sang terraform.tfvars rồi chỉnh. File terraform.tfvars KHÔNG được commit.
+
+# East Asia = rẻ nhất cho dev. Fallback: "southeastasia" nếu thiếu dịch vụ.
+location        = "eastasia"
+subscription_id = "c4a86d00-6328-4d7b-8c75-6293553cd19c"
+
+# Để trống để tự phát hiện IP hiện tại; hoặc điền tay nếu CI chạy:
+# operator_ip_cidr = "203.0.113.10/32"
+
+# Để false ở lần apply đầu (chưa có image). Bật sau khi push image (xem runbooks).
+deploy_apps = false
+# api_image   = "acrdevXXXX.azurecr.io/learnguard-api@sha256:..."
+# job_image   = "acrdevXXXX.azurecr.io/learnguard-ml@sha256:..."

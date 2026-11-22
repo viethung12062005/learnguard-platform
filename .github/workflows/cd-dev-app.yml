@@ -1,0 +1,98 @@
+name: CD · dev · app image
+
+# Deploy một image (theo digest) vào Container App API, kèm smoke test + rollback.
+# Image do CI (hoặc thủ công) build và push; workflow này KHÔNG build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: "Thành phần cần deploy"
+        type: choice
+        options: [api, ml-job]
+        default: api
+      image:
+        description: "Image ref kèm digest. VD: acrdevxxxx.azurecr.io/learnguard-api@sha256:..."
+        required: true
+      skip_smoke:
+        description: "Bỏ qua smoke test (chỉ dùng khi khẩn cấp)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-dev-app
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.component }}
+    runs-on: [self-hosted, Windows, learnguard]
+    environment: dev
+    defaults:
+      run:
+        shell: powershell
+        working-directory: infra/env/dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Kiểm tra định dạng image (phải ghim digest)
+        run: |
+          $img = "${{ inputs.image }}"
+          if ($img -notmatch '@sha256:[0-9a-f]{64}$') {
+            throw "Image phai ghim digest (@sha256:...). Nhan: $img"
+          }
+          Write-Host "Image: $img"
+
+      - name: Kiểm tra đăng nhập Azure
+        run: |
+          az account show --query "{subscription:name, user:user.name}" -o table
+          if ($LASTEXITCODE -ne 0) { throw "Runner chưa có phiên az login." }
+
+      - name: terraform init
+        run: |
+          terraform init -input=false -no-color -backend-config="resource_group_name=${{ vars.TF_BACKEND_RG }}" -backend-config="storage_account_name=${{ vars.TF_BACKEND_SA }}" -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}" -backend-config="key=${{ vars.TF_STATE_KEY }}"
+          if ($LASTEXITCODE -ne 0) { throw "terraform init failed" }
+
+      - name: Plan (thay đổi image)
+        run: |
+          terraform plan -input=false -no-color -out=tfplan -var="deploy_apps=true" -var="${{ inputs.component == 'api' && 'api_image' || 'job_image' }}=${{ inputs.image }}"
+          if ($LASTEXITCODE -ne 0) { throw "terraform plan failed" }
+
+      - name: Guardrail
+        run: |
+          terraform show -json tfplan | Out-File -FilePath plan.json -Encoding utf8
+          python ..\..\..\scripts\guardrails\check_plan.py plan.json
+          if ($LASTEXITCODE -ne 0) { throw "Guardrail failed" }
+
+      - name: Apply
+        run: |
+          terraform apply -input=false -no-color tfplan
+          if ($LASTEXITCODE -ne 0) { throw "terraform apply failed" }
+
+      - name: Lấy FQDN
+        id: fqdn
+        run: |
+          $fqdn = terraform output -raw api_fqdn
+          Write-Host "API: $fqdn"
+          "value=$fqdn" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Smoke test + rollback nếu fail
+        if: inputs.component == 'api' && inputs.skip_smoke == false
+        run: |
+          pwsh -File ..\..\..\scripts\cd\smoke-and-rollback.ps1 -AppName "${{ vars.API_APP_NAME }}" -ResourceGroup "${{ vars.RESOURCE_GROUP }}" -Fqdn "${{ steps.fqdn.outputs.value }}"
+
+      - name: Ghi nhận release (log job)
+        run: |
+          Write-Host "component=${{ inputs.component }}"
+          Write-Host "image=${{ inputs.image }}"
+          Write-Host "commit=${{ github.sha }}"
+          Write-Host "by=${{ github.actor }}"

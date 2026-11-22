@@ -1,0 +1,11 @@
+#cloud-config
+# Jump VM — cài sẵn tool để seed KV / chạy psql / upload dataset từ trong VNet.
+package_update: true
+package_upgrade: false
+packages:
+  - postgresql-client
+  - jq
+  - unzip
+runcmd:
+  # Azure CLI (chính thức qua script deb). Không in secret.
+  - curl -sL https://aka.ms/InstallAzureCLIDeb | bash

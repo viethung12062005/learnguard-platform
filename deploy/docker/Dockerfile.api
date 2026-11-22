@@ -1,0 +1,60 @@
+# LearnGuard — Hardened Multi-Stage Production Dockerfile for Backend API (BE-MLOPS)
+# Build context = BE-MLOPS repository root.
+# Build command:
+#   docker build -f learnguard-platform/deploy/docker/Dockerfile.api -t ghcr.io/<org>/learnguard-api:<tag> ./BE-MLOPS
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build virtual environment with backend package and Alembic
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /build
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+
+COPY pyproject.toml ./
+COPY src ./src
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir . alembic
+
+# ---------------------------------------------------------------------------
+# Stage 2: Minimal non-root runtime image
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS runtime
+
+LABEL org.opencontainers.image.title="learnguard-api" \
+      org.opencontainers.image.description="LearnGuard Advisor Backend API (FastAPI + SQLAlchemy + LiteLLM)" \
+      org.opencontainers.image.source="https://github.com/ntk223/BE-MLOPS"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}"
+
+WORKDIR /app
+
+# Create unprivileged application user (UID/GID 10001)
+RUN groupadd --gid 10001 learnguard && \
+    useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learnguard
+
+COPY --from=builder /opt/venv /opt/venv
+COPY alembic.ini ./
+COPY src ./src
+COPY migrations ./migrations
+
+RUN chown -R learnguard:learnguard /app
+
+USER learnguard:learnguard
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).read()" || exit 1
+
+CMD ["uvicorn", "learnguard_backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

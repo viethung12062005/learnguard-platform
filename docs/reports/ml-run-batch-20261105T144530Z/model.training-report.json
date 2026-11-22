@@ -1,0 +1,26 @@
+{
+  "class_counts": {
+    "0": 6566,
+    "1": 5245
+  },
+  "class_rates": {
+    "0": 0.5559224451782236,
+    "1": 0.4440775548217763
+  },
+  "convergence_status": "converged",
+  "errors": [],
+  "feature_count": 38,
+  "fit_duration_seconds": 0.12174457599999755,
+  "inf_count": 0,
+  "iterations": [
+    39
+  ],
+  "maximum_absolute_coefficient": 2.321333108164671,
+  "maximum_train_probability": 0.9968518930847473,
+  "minimum_train_probability": 0.003148106915252691,
+  "nan_count": 0,
+  "status": "ok",
+  "train_probability_semantic_hash": "0762a0e94449b9325553a4eb29f9fd8ac8d406d2a7289b19767bfd0abd06376c",
+  "train_row_count": 11811,
+  "warnings": []
+}
