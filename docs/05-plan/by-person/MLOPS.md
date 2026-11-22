@@ -6,7 +6,7 @@
 
 **Định nghĩa Hoàn thành (DoD) cho mọi Task:** Script pass `bash -n` & `--dry-run`, Python pass `ruff check` & `pytest`, YAML pass `yaml.safe_load`, không lộ secret, có runbook và bằng chứng ghi trong [dod-audit.md](../dod-audit.md).
 
-Tổng cộng: **21 tasks (80 giờ)**. Đã hoàn thành: **18 tasks (`☑`)**, Cần làm tiếp: **3 tasks (`☐`, ~10 giờ)**.
+Tổng cộng: **21 tasks (80 giờ)**. Đã hoàn thành: **19 tasks (`☑`)**, Cần làm tiếp: **2 tasks (`☐`, ~8 giờ)**.
 
 ---
 

@@ -64,7 +64,7 @@ Sprint 3 (Tuần Tổng kết & Bảo vệ Đồ án — Production Engineering 
 
 | Thành viên | Vai trò | Tổng số Task | Đã xong (`☑`) | Đang làm / Một phần (`◐`) | Cần làm tiếp (`☐`) | Tổng Giờ Ước tính (Remaining) | Trọng tâm Sắp tới |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **`MLOPS`** | MLOps + DevOps + Architect (Bạn) | **21** | 18 | 0 | **3** | ~10h | Push GitHub & verify live Actions (`CICD-05`), provision DO Droplet (`OPS-06`), diễn tập Chaos/Rollback (`OPS-07`). |
+| **`MLOPS`** | MLOps + DevOps + Architect (Bạn) | **21** | 19 | 0 | **2** | ~8h | Provision DO Droplet & chạy live stack (`OPS-06`), diễn tập Chaos/Rollback (`OPS-07`), review PR của 3 thành viên. |
 | **`SWE1`** | Backend Engineer (`BE-MLOPS`) | **13** | 7 | 1 | **5** | ~16h | M6 JWT Login & RBAC (`BE-08`, `BE-09`), thay `system` actor bằng user thật (`BE-10`), Prometheus `/metrics` & latency logging (`BE-11`). |
 | **`SWE2`** | Frontend Engineer (`FE-MLOPS`) | **12** | 8 | 1 | **3** | ~14h | Nối Real JWT Auth (`FE-09`), Vitest component tests (`FE-11`), Playwright E2E luồng cố vấn duyệt Brief (`FE-12`). |
 | **`AIE`** | AI / ML Engineer (`Data-ML-MLOPS` + LLM) | **14** | 10 | 1 | **3** | ~14h | Đa chiều Fairness Slices & Calibration ECE (`ML-11`), Human-calibrated LLM Rubric Experiment (`AI-07`), Báo cáo False Negative & Workload (`ML-12`). |

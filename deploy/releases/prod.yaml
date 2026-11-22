@@ -6,22 +6,22 @@
 schema: release-manifest.v2
 environment: prod
 target_platform: digitalocean-droplet-compose
-updated_at: "2026-11-23T00:00:00Z"
+updated_at: "2026-11-22T18:54:20Z"
 updated_by: "github-actions[bot]"
 
 components:
   api:
-    image: "ghcr.io/viethung12062005/learnguard-api@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    image: "ghcr.io/viethung12062005/learnguard-api@sha256:2d232c5ca2f1d72c2f3f38347561f4490b57d7ac9f579747149f372ce7cc8a8c"
     source_repo: "ntk223/BE-MLOPS"
-    source_commit: "a2bae92"
+    source_commit: "a2bae92603aea5796de03267f32cc55589dfd9d0"
   ml_batch:
-    image: "ghcr.io/viethung12062005/learnguard-ml@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    image: "ghcr.io/viethung12062005/learnguard-ml@sha256:5bfab2cccd13387214929faf3c05d4b9ea2e3d5f11c04e06fbc0a4006d09833f"
     source_repo: "ntk223/Data-ML-MLOPS"
-    source_commit: "72c96cd"
+    source_commit: "72c96cdfde4bbf084cc68ede500aa4f0c4e3decf"
   frontend:
-    image: "ghcr.io/viethung12062005/learnguard-fe@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    image: "ghcr.io/viethung12062005/learnguard-fe@sha256:1805e399bcadf79186e99545f0ebf0a353bd678e179ea4d503ac744efda6c63f"
     source_repo: "ntk223/FE-MLOPS"
-    source_commit: "0f70e14"
+    source_commit: "0f70e1498cd05360876da361b347b48d1af31eda"
 
 active_model_release:
   release_id: "release-v2-prod-cutoff27"

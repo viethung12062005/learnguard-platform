@@ -14,7 +14,7 @@
 
 | Nhóm Phụ trách | Tổng số Task | `PASS` (Đã chứng minh) | `PARTIAL` / `IN PROGRESS` | `TODO` (Sprint 1–2) | Bằng chứng Kiểm thử Thực tế |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **`MLOPS` (Bạn — Platform, CI/CD, Drift/Retrain)** | **21** | **18** | 0 | **3** (`CICD-05`, `OPS-06`, `OPS-07`) | `pytest learnguard-platform/tests`: **6 passed**; `ruff check`: **0 errors**; 7 shell scripts pass `bash -n` & `--dry-run`; 14 YAML files pass `yaml.safe_load`. |
+| **`MLOPS` (Bạn — Platform, CI/CD, Drift/Retrain)** | **21** | **19** | 0 | **2** (`OPS-06`, `OPS-07`) | GitHub Actions 4/4 workflows **GREEN** (`ci-platform`, `ci-build-and-scan` 0 HIGH/CRITICAL CVEs + GHCR `@sha256`, `mlops-drift-retrain`, `cd-digitalocean-prod`); `pytest`: **6 passed**; `ruff`: **0 errors**; ShellCheck **0 warnings**. |
 | **`SWE1` (Backend `BE-MLOPS`)** | **13** | **7** | **1** (`BE-08`) | **5** (`BE-09`..`BE-13`) | `BE-MLOPS` (`a2bae92`): 9 test suites (`test_app`, `test_predictions_api`, `test_briefs`, `test_chat`, `test_evaluations_api`, `test_audit_logs_api`, `test_llm`, `test_ml_predictions`, `test_student_keys`) pass. |
 | **`SWE2` (Frontend `FE-MLOPS`)** | **12** | **8** | **1** (`FE-09`) | **3** (`FE-10`..`FE-12`) | `FE-MLOPS` (`0f70e14`): `npm run build` (`tsc --noEmit && vite build`) & `tests/test-chat.ts` pass. |
 | **`AIE` (Data/ML `Data-ML-MLOPS` & LLM)** | **14** | **10** | **1** (`ML-11`) | **3** (`ML-12`, `AI-06`, `AI-07`) | `Data-ML-MLOPS` (`72c96cd`): **163 passed, 8 skipped** (`pytest tests/ -q`). |
