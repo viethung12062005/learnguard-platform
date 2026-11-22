@@ -39,10 +39,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Remove system setuptools/wheel outside /opt/venv so Trivy does not flag Debian's base python3-setuptools
+# Remove system setuptools/wheel/ensurepip outside /opt/venv so Trivy does not flag Debian's base python3-setuptools
 RUN apt-get update && \
     apt-get upgrade -y --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/* /usr/local/lib/python*/site-packages/setuptools* /usr/lib/python*/dist-packages/setuptools* && \
+    rm -rf /var/lib/apt/lists/* /usr/local/lib/python*/ensurepip /usr/local/lib/python*/site-packages/setuptools* /usr/lib/python*/dist-packages/setuptools* && \
     groupadd --gid 10001 learnguard && \
     useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learnguard
 

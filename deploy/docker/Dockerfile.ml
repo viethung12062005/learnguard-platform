@@ -44,10 +44,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Apply latest Debian security patches (e.g. zlib1g), remove system setuptools outside /opt/venv, and create unprivileged user (UID/GID 10001)
+# Apply latest Debian security patches (e.g. zlib1g), remove system setuptools/ensurepip outside /opt/venv, and create unprivileged user (UID/GID 10001)
 RUN apt-get update && \
     apt-get upgrade -y --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/* /usr/local/lib/python*/site-packages/setuptools* /usr/lib/python*/dist-packages/setuptools* && \
+    rm -rf /var/lib/apt/lists/* /usr/local/lib/python*/ensurepip /usr/local/lib/python*/site-packages/setuptools* /usr/lib/python*/dist-packages/setuptools* && \
     groupadd --gid 10001 learnguard && \
     useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learnguard && \
     mkdir -p /tmp/learnguard-matplotlib /mnt/data/oulad /mnt/data/artifacts && \
