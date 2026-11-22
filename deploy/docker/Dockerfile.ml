@@ -21,7 +21,7 @@ ENV PATH="/opt/venv/bin:${PATH}"
 COPY requirements.txt pyproject.toml ./
 COPY src ./src
 
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade "pip>=25.0" "setuptools>=78.1.1" "wheel>=0.46.2" && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir --no-deps .
 
@@ -44,8 +44,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Create unprivileged application user (UID/GID 10001) and writable matplotlib cache dir
-RUN groupadd --gid 10001 learnguard && \
+# Apply latest Debian security patches (e.g. zlib1g), remove system setuptools outside /opt/venv, and create unprivileged user (UID/GID 10001)
+RUN apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/* /usr/local/lib/python*/site-packages/setuptools* /usr/lib/python*/dist-packages/setuptools* && \
+    groupadd --gid 10001 learnguard && \
     useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin learnguard && \
     mkdir -p /tmp/learnguard-matplotlib /mnt/data/oulad /mnt/data/artifacts && \
     chown -R learnguard:learnguard /tmp/learnguard-matplotlib /mnt/data
