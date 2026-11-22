@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ntk223/Data-ML-MLOPS
-          ref: 72c96cd
+          ref: 72c96cdfde4bbf084cc68ede500aa4f0c4e3decf
           path: Data-ML-MLOPS
 
       - name: Set up Python 3.12

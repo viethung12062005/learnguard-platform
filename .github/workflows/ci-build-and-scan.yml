@@ -44,19 +44,19 @@ jobs:
             image_name: learnguard-api
             dockerfile: learnguard-platform/deploy/docker/Dockerfile.api
             repo: ntk223/BE-MLOPS
-            ref: a2bae92
+            ref: a2bae92603aea5796de03267f32cc55589dfd9d0
             context_dir: BE-MLOPS
           - component: ml
             image_name: learnguard-ml
             dockerfile: learnguard-platform/deploy/docker/Dockerfile.ml
             repo: ntk223/Data-ML-MLOPS
-            ref: 72c96cd
+            ref: 72c96cdfde4bbf084cc68ede500aa4f0c4e3decf
             context_dir: Data-ML-MLOPS
           - component: fe
             image_name: learnguard-fe
             dockerfile: learnguard-platform/deploy/docker/Dockerfile.fe
             repo: ntk223/FE-MLOPS
-            ref: 0f70e14
+            ref: 0f70e1498cd05360876da361b347b48d1af31eda
             context_dir: FE-MLOPS
 
     steps:
@@ -94,7 +94,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy container vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image_name }}:${{ github.sha }}
           format: table

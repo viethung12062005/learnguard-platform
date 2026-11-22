@@ -132,7 +132,7 @@ log "4/6 Checking DigitalOcean Block Storage volume and creating directory hiera
 DATA_MOUNT="${LG_ROOT}/data"
 run_cmd mkdir -p "${DATA_MOUNT}"
 
-DO_VOL="$(ls /dev/disk/by-id/scsi-0DO_Volume_* 2>/dev/null | head -n 1 || true)"
+DO_VOL="$(find /dev/disk/by-id -maxdepth 1 -name 'scsi-0DO_Volume_*' 2>/dev/null | head -n 1 || true)"
 if [[ -n "${DO_VOL}" && -e "${DO_VOL}" ]]; then
   if [[ "${DRY_RUN}" == "true" ]]; then
     log "[DRY-RUN] Would format (if unformatted), add fstab entry, and mount ${DO_VOL} -> ${DATA_MOUNT}"

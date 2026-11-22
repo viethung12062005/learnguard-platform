@@ -90,7 +90,7 @@ chmod 0600 "${SHA_FILE}"
 log "Backup complete ($(du -h "${DUMP_FILE}" | cut -f1)). Checksum saved to ${SHA_FILE}."
 
 # Prune older backups beyond RETENTION_COUNT
-mapfile -t OLD_DUMPS < <(ls -1t "${BACKUP_DIR}"/learnguard_pg_*.sql.gz 2>/dev/null | tail -n +"$((RETENTION_COUNT + 1))" || true)
+mapfile -t OLD_DUMPS < <(find "${BACKUP_DIR}" -maxdepth 1 -type f -name 'learnguard_pg_*.sql.gz' -printf '%T@\t%p\n' 2>/dev/null | sort -rn | cut -f2- | tail -n +"$((RETENTION_COUNT + 1))" || true)
 if [[ "${#OLD_DUMPS[@]}" -gt 0 ]]; then
   log "Pruning ${#OLD_DUMPS[@]} old backup(s) exceeding retention policy (keep=${RETENTION_COUNT})..."
   for old in "${OLD_DUMPS[@]}"; do
