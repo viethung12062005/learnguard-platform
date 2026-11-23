@@ -4,6 +4,19 @@
 
 ---
 
+## Phiên 2026-11-23 (ARC-05 — Chuẩn hóa Docs SHP 00-*..06-* & Dual-Cloud Deploy-Where-Available)
+
+- **Mục tiêu**: Chuẩn hóa cấu trúc tài liệu sang `docs/00-*..06-*`, áp dụng mô hình Dual-Cloud Deploy-Where-Available (Option A Azure PaaS + Option B DigitalOcean VM), đồng bộ `agent-harness` (`learnguard` profile), và bổ sung tasks `BE-14`, `FE-13`, `OPS-08` (tổng 64 tasks).
+- **Đã làm**:
+  1. Cập nhật `agent-harness/profiles/learnguard/profile.toml` và `plugins/graph.py` theo canonical paths.
+  2. Cập nhật top-level entrypoints (`AGENT.md`, `PROJECT_CONTEXT.md`) và tất cả tài liệu kiến trúc, delivery, workflow.
+  3. Chuẩn hóa 6 fairness slices (`gender`, `code_module`, `age_band`, `disability`, `imd_band`, `highest_education`) trên toàn bộ tài liệu.
+  4. Chạy kiểm tra doctor, graph, index, bench và kiểm tra tuyệt đối liên kết markdown (0 broken links).
+- **Kết quả**: 100% verified sạch, không ảnh hưởng các repo app (`BE-MLOPS`, `Data-ML-MLOPS`, `FE-MLOPS`).
+
+---
+
+
 ## 2026-11-23 — Phase 2: DigitalOcean Production Migration, CMU MLIP Conventions & Drift/Retraining Pipeline
 
 ### Mục tiêu phiên

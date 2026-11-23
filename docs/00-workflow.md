@@ -24,7 +24,7 @@ Không ai được phép commit hoặc push trực tiếp vào `main` khi phát 
 ### 2.1. Cấu trúc Mã Công việc (Task ID)
 
 Mỗi đầu việc trong [05-plan/backlog.csv](05-plan/backlog.csv) có định danh duy nhất theo nhóm:
-- **`OPS-xx`**: Hạ tầng DigitalOcean, Docker Compose, Nginx, PostgreSQL Roles, Backup/Restore, Observability (do **MLOPS** phụ trách).
+- **`OPS-xx (Option A Azure PaaS infra/env/dev/ + Option B DigitalOcean VM infra/digitalocean/)`**: Hạ tầng DigitalOcean, Docker Compose, Nginx, PostgreSQL Roles, Backup/Restore, Observability (do **MLOPS** phụ trách).
 - **`CICD-xx`**: GitHub Actions CI/CD, GHCR Immutable Digest, Trivy Security Scan, Smoke Test & Auto-Rollback (do **MLOPS** phụ trách).
 - **`MLO-xx`**: Drift Monitor, Data Simulator, Behavioral Gate, Continual Retraining Champion-vs-Challenger (do **MLOPS** phụ trách).
 - **`BE-xx`**: FastAPI Backend Core, M6 JWT Auth & RBAC, M7 Persistence, Audit Logs, Student Activity, Metrics API (do **SWE1** phụ trách).

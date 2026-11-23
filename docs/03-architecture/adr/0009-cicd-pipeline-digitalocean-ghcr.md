@@ -2,11 +2,11 @@
 
 - **Trạng thái:** Accepted
 - **Ngày:** 2026-11-23
-- **Supersedes:** ADR-0006 (CI/CD self-hosted runner + Azure OIDC).
+- **Parallel Target To:** ADR-0006 (Option A: Azure PaaS OIDC CI/CD) — Dual-Cloud Deploy-Where-Available.
 
 ## 1. Bối cảnh
 
-Khi chuyển sang triển khai trên DigitalOcean Droplet VM, hệ thống cần một quy trình CI/CD hoàn toàn tự động, kiểm chứng được toàn bộ 6 tầng chất lượng của hệ thống AI (theo **CMU MLIP Lec 5 & Lec 6**) trước khi cho phép bản dựng chạm tới môi trường production, đồng thời phải có khả năng tự động quay lui (auto-rollback) nếu bất kỳ kiểm tra hậu triển khai (post-deploy smoke test) nào thất bại.
+Khi triển khai theo phương án Cloud Option B (DigitalOcean Droplet VM) — song song với Option A (Azure PaaS, ADR-0006) theo nguyên tắc Deploy-Where-Available, hệ thống cần một quy trình CI/CD hoàn toàn tự động, kiểm chứng được toàn bộ 6 tầng chất lượng của hệ thống AI (theo **CMU MLIP Lec 5 & Lec 6**) trước khi cho phép bản dựng chạm tới môi trường production, đồng thời phải có khả năng tự động quay lui (auto-rollback) nếu bất kỳ kiểm tra hậu triển khai (post-deploy smoke test) nào thất bại.
 
 ## 2. Quyết định
 

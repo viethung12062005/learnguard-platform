@@ -1,9 +1,10 @@
 # Quy chuẩn Kỹ thuật Phần mềm, DevOps và MLOps (Production-Like Conventions)
 
-> **Phiên bản:** 2.0 (2026-11-23)
+> **Phiên bản:** 2.1 (2026-11-23)
 > **Nền tảng lý thuyết:** Carnegie Mellon University — *Machine Learning in Production: From Models to Products* ([CMU MLIP Textbook](https://mlip-cmu.github.io/book/index.html)) & Bài giảng Học phần Lec 1–6 (VNU-UET).
 > **Áp dụng cho:** Toàn bộ hệ thống **LearnGuard** (`learnguard-platform`, `BE-MLOPS`, `Data-ML-MLOPS`, `FE-MLOPS`).
-> **Mục tiêu:** Thiết lập hệ thống quy chuẩn phát triển phần mềm, kiểm định chất lượng dữ liệu/mô hình, vận hành hạ tầng trên **DigitalOcean VM** và pipeline **CI/CD + Continual Retraining khi xảy ra Data Drift** đạt mức **like-production** cao nhất.
+> **Mục tiêu:** Thiết lập hệ thống quy chuẩn phát triển phần mềm, kiểm định chất lượng dữ liệu/mô hình, vận hành hạ tầng theo chiến lược **Cloud-Portable Dual-Option (Option A: Azure PaaS & Option B: DigitalOcean VM)** và pipeline **CI/CD + Continual Retraining khi xảy ra Data Drift** đạt mức **like-production** cao nhất.
+> **Điều hướng nhanh:** [Hub Tài liệu](README.md) · [Quy trình Giao nhận](00-delivery-process.md) · [Workflow Nhóm](00-workflow.md) · [Chiến lược Dual-Cloud](03-architecture/dual-cloud-strategy.md) · [Chiến lược SE](04-devops/software-engineering-strategy.md)
 
 ---
 
@@ -13,12 +14,12 @@ Theo khung lý thuyết **CMU MLIP** (Ch. 1–7, Lec 1–2), mã nguồn huấn 
 
 ### 1.1. Bốn Ranh giới Hệ thống (The Four Boundaries — Lec 1)
 
-Mọi thiết kế, tài liệu, kiểm thử và pipeline CI/CD của LearnGuard được tổ chức xoay quanh 4 ranh giới lồng nhau:
+Mọi thiết kế, tài liệu, kiểm thử và pipeline CI/CD của LearnGuard được tổ chức xoay quanh 4 ranh giới lồng nhau (xem thêm phân tích phạm vi tại [01-business-analysis/problem-and-scope.md](01-business-analysis/problem-and-scope.md)):
 
 ```mermaid
 flowchart TB
     subgraph PRODUCT["4. Product Boundary (Giá trị, Người dùng, Chính sách, Hệ quả)"]
-        subgraph SYSTEM["3. System Boundary (Kiến trúc kỹ thuật + Con người vận hành)"]
+        subgraph SYSTEM["3. System Boundary (Kiến trúc kỹ thuật Dual-Cloud + Con người vận hành)"]
             subgraph PIPELINE["2. Pipeline Boundary (Tạo lập, Kiểm định, Đóng gói & Tái huấn luyện lặp lại được)"]
                 subgraph MODEL["1. Model Boundary (Ánh xạ học được: Logistic Regression v2 + Linear SHAP & LLM Brief)"]
                 end
@@ -31,8 +32,8 @@ flowchart TB
 | :--- | :--- | :--- |
 | **1. Model** | Mô hình dự báo sớm rủi ro trượt/bỏ học (`LogisticRegression` + `LinearSHAP` tại `cutoff_day=27`) và dịch vụ tổng hợp `Advisor Brief` qua LLM (`LiteLLM` + `Ollama` fallback). | Độ chính xác trên từng slice? So với baseline? Độ trễ và chi phí suy luận? Điểm yếu của mô hình ở đâu? |
 | **2. Pipeline** | Chuỗi `M1 (Ingest) → M2 (Snapshot) → M3 (Leakage/Quality Gate) → Drift Monitor → M4 (Preprocess/Train) → Evaluation Gates → Release → M5 (Batch Score)`. | Có tái lập (reproduce) được 100% từ hash không? Có tự động chặn/promote candidate không? Có truy vết (provenance) và rollback được không? |
-| **3. System** | `PostgreSQL` (shared data plane) + `FastAPI Backend` + `React Advisor Dashboard` + `Nginx Reverse Proxy` + **Cố vấn học tập (Human-in-the-loop)**. | Điều gì xảy ra sau khi model xuất điểm rủi ro? Thành phần nào kiểm tra, trì hoãn (`manual_review`, `insufficient_data`), hoặc đảo ngược? Khi LLM/DB lỗi thì hệ thống phản ứng ra sao? |
-| **4. Product** | Hỗ trợ giảng viên/cố vấn ưu tiên sinh viên cần can thiệp sớm ở cuối tuần 4 mà không gây quá tải cảnh báo và không phán xét nhân quả/tâm lý sinh viên. | Sản phẩm có giảm thời gian tổng hợp hồ sơ của cố vấn mà vẫn giữ 100% quyền quyết định ở con người không? Rủi ro dư thừa (residual risk) do ai sở hữu? |
+| **3. System** | `PostgreSQL` (shared data plane với `lg_api` / `lg_ml_writer`) + `FastAPI Backend` + `React Advisor Dashboard` + Reverse Proxy (`Nginx` ở Option B / Ingress+SWA ở Option A) + **Cố vấn học tập (Human-in-the-loop)**. | Điều gì xảy ra sau khi model xuất điểm rủi ro? Thành phần nào kiểm tra, trì hoãn (`manual_review`, `insufficient_data`), hoặc đảo ngược? Khi LLM/DB lỗi thì hệ thống phản ứng ra sao? |
+| **4. Product** | Hỗ trợ giảng viên/cố vấn ưu tiên sinh viên cần can thiệp sớm ở cuối tuần 4 mà không gây quá tải cảnh báo và không phán xét nhân quả/tâm lý sinh viên. | Sản phẩm có giảm thời gian tổng hợp hồ sơ của cố vấn mà vẫn giữ 100% quyền quyết định ở con người không (theo [product-value-protocol.md](01-business-analysis/product-value-protocol.md))? Rủi ro dư thừa (residual risk) do ai sở hữu? |
 
 ---
 
@@ -40,7 +41,7 @@ flowchart TB
 
 ### 2.1. Phân tách Thế giới và Máy (`ASM ∧ SPEC => REQ`)
 
-Phần mềm không thể tự mình thỏa mãn yêu cầu trong thế giới thực nếu các giả định về môi trường bị vi phạm (bài học *Lufthansa 2904* — Lec 2). Mọi tính năng và pipeline phải ghi rõ 3 thành phần:
+Phần mềm không thể tự mình thỏa mãn yêu cầu trong thế giới thực nếu các giả định về môi trường bị vi phạm (bài học *Lufthansa 2904* — Lec 2). Mọi tính năng và pipeline phải ghi rõ 3 thành phần (chi tiết tại [02-requirements/requirements.md](02-requirements/requirements.md) và [02-requirements/traceability.md](02-requirements/traceability.md)):
 
 1. **System Requirement (`REQ` — hiện tượng thế giới thực):**
    - `REQ-01 (Early Detection under Bounded Workload)`: Cố vấn học tập phát hiện và xem xét kịp thời các sinh viên có nguy cơ `Fail/Withdrawn` ngay sau tuần 4 (`day 27`) trong giới hạn ngân sách tải công việc tối đa 20% tổng số sinh viên đang theo học.
@@ -62,45 +63,48 @@ Không tối ưu một chỉ số đơn lẻ để tránh **Proxy Trap** (Lec 2 
 
 | Thành phần Portfolio | Chỉ số đo lường (Metric) | Ngưỡng / Ràng buộc | Chủ sở hữu (Owner) |
 | :--- | :--- | :--- | :--- |
-| **Primary Outcome** | `Precision@Top20%` & `Recall@Top20%` trên sinh viên At-Risk tại ngày 27 | `Precision@20% >= 0.50` (fail `< 0.35`) | ML Owner & Product Lead |
-| **Guardrails** | (1) Temporal Leakage Violations<br>(2) Unreviewed Student Contact<br>(3) LLM Uncited/Causal Claims | (1) `0 violations` (Hard Fail)<br>(2) `0 auto-sends` (Hard Fail)<br>(3) `Citation validity = 100%` | Data Engineer & Backend Owner |
-| **Balancing Measures** | (1) Realized Advisor Alert Rate<br>(2) Manual Review Queue Ratio<br>(3) Brief Generation p95 Latency & Cost | (1) `20% ± 5%` (critical `> 30%`)<br>(2) Theo dõi tỷ lệ `manual_review`<br>(3) `p95 <= 15s`, token budget `<= 8000 in / 1000 out` | Platform / MLOps Engineer |
-| **Leading Indicators** | Feature PSI, Missingness Rate, Week 3→4 Click Trend Shift | `PSI <= 0.10` (pass), `0.10–0.20` (warn), `> 0.20` (fail/triage) | Data / MLOps Engineer |
-| **Model Diagnostics** | `ROC-AUC`, `PR-AUC`, `Brier Score`, `SHAP Additivity Error`, `Fairness Slice FNR Gap` | `ROC-AUC >= 0.70` (warn `< 0.75`), `SHAP error <= 1e-8`, `FNR gap <= 0.10` | ML Owner |
+| **Primary Outcome** | `Precision@Top20%` & `Recall@Top20%` trên sinh viên At-Risk tại ngày 27 | `Precision@20% >= 0.50` (fail `< 0.35`) | ML Owner (`AIE`) & Product Lead |
+| **Guardrails** | (1) Temporal Leakage Violations<br>(2) Unreviewed Student Contact<br>(3) LLM Uncited/Causal Claims | (1) `0 violations` (Hard Fail)<br>(2) `0 auto-sends` (Hard Fail)<br>(3) `Citation validity = 100%` | Data Engineer (`AIE`) & Backend Owner (`SWE1`) |
+| **Balancing Measures** | (1) Realized Advisor Alert Rate<br>(2) Manual Review Queue Ratio<br>(3) Brief Generation p95 Latency & Cost | (1) `20% ± 5%` (critical `> 30%`)<br>(2) Theo dõi tỷ lệ `manual_review`<br>(3) `p95 <= 15s`, token budget `<= 8000 in / 1000 out` | Platform / MLOps (`MLOPS`) & Backend (`SWE1`) |
+| **Leading Indicators** | Feature PSI, Missingness Rate, Week 3→4 Click Trend Shift | `PSI <= 0.10` (pass), `0.10–0.20` (warn), `> 0.20` (fail/triage) | Platform / MLOps (`MLOPS`) |
+| **Model Diagnostics** | `ROC-AUC`, `PR-AUC`, `Brier Score`, `SHAP Additivity Error`, `Fairness Slice FNR Gap` | `ROC-AUC >= 0.70` (warn `< 0.75`), `SHAP error <= 1e-8`, `FNR gap <= 0.10` | ML Owner (`AIE`) |
 
 ---
 
-## 3. Ranh giới Kho mã nguồn (Repository Boundaries & Ownership)
+## 3. Ranh giới Kho mã nguồn & Tính Di động Đa Đám mây (Repo Boundaries & Dual-Cloud Portability)
 
-Dự án tuân thủ mô hình **Multi-Repo với Platform Orchestrator tách biệt** (Conway's Law — Lec 3):
+Dự án tuân thủ mô hình **Multi-Repo với Platform Orchestrator tách biệt** (Conway's Law — Lec 3), kết hợp chiến lược **Cloud-Portable Dual-Option** ([`03-architecture/dual-cloud-strategy.md`](03-architecture/dual-cloud-strategy.md)):
 
 | Repository | Vai trò | Quyền trong Pipeline CI/CD & Platform | Hợp đồng Giao tiếp (Contract) |
 | :--- | :--- | :--- | :--- |
-| **`learnguard-platform`** | Hạ tầng (IaC), Dockerfiles, Compose, Nginx, Scripts, CI/CD, Drift/Retraining Orchestrator, Runbooks | **Đọc / Ghi toàn quyền** (Repo trung tâm điều phối) | Quản lý `deploy/releases/{dev,prod}.yaml`, `.github/workflows/`, `deploy/ml/` |
-| **`ntk223/Data-ML-MLOPS`** | Core ML & Data package (`learnguard` CLI: M1–M5, Evaluation Gates) | **Upstream Read-Only** (Build image từ commit SHA cố định) | Xuất `prediction-batch.v1`, `model-release.v1`, `eval-report.v1` và ghi bảng `ml_predictions` qua role `lg_ml_writer` |
-| **`ntk223/BE-MLOPS`** | FastAPI Modular Monolith (`learnguard_backend`: M6–M8, Briefs, Chat, Audit) | **Upstream Read-Only** (Build image từ commit SHA cố định) | Đọc bảng `ml_predictions` + `artifacts/evaluations` qua role `lg_api`; sở hữu `users`, `briefs`, `decisions`, `llm_calls`, `audit_logs`, `chat_*` |
-| **`ntk223/FE-MLOPS`** | React 18 + TypeScript + Vite SPA (M9 Advisor Dashboard) | **Upstream Read-Only** (Build static bundle vào Nginx container) | Giao tiếp duy nhất qua REST API theo `FE-MLOPS/docs/API_CONTRACT.md` |
+| **`learnguard-platform`** | Hạ tầng IaC cho **cả Option A (`infra/env/dev/`, `infra/modules/*`) và Option B (`infra/digitalocean/`, `deploy/digitalocean/`)**, Dockerfiles dùng chung (`deploy/docker/`), Scripts, CI/CD, Drift/Retraining Orchestrator (`deploy/ml/`), Runbooks & Docs. | **Đọc / Ghi toàn quyền** (Repo trung tâm điều phối) | Quản lý `deploy/releases/{dev,prod}.yaml`, `.github/workflows/`, `deploy/ml/`, `deploy/db/roles.sql`. |
+| **`ntk223/Data-ML-MLOPS`** | Core ML & Data package (`learnguard` CLI: M1–M5, Evaluation Gates) | **Upstream Read-Only** (Build image từ commit SHA cố định) | Xuất `prediction-batch.v1`, `model-release.v1`, `eval-report.v1` và ghi bảng `ml_predictions` qua role `lg_ml_writer`. |
+| **`ntk223/BE-MLOPS`** | FastAPI Modular Monolith (`learnguard_backend`: M6–M8, Briefs, Chat, Audit) | **Upstream Read-Only** (Build image từ commit SHA cố định) | Đọc bảng `ml_predictions` + `artifacts/evaluations` qua role `lg_api`; sở hữu `users`, `briefs`, `decisions`, `llm_calls`, `audit_logs`, `chat_*`. |
+| **`ntk223/FE-MLOPS`** | React 18 + TypeScript + Vite SPA (M9 Advisor Dashboard) | **Upstream Read-Only** (Build static bundle vào Nginx container hoặc Azure SWA) | Giao tiếp duy nhất qua REST API theo `FE-MLOPS/docs/API_CONTRACT.md`. |
 
 > [!IMPORTANT]
-> **Quy tắc Bất biến (Hard Rule):**
+> **Quy tắc Bất biến (Hard Rules):**
 > 1. Không import mã Python nội bộ giữa `Data-ML-MLOPS` và `BE-MLOPS`. Hai thành phần chỉ giao tiếp qua bảng `ml_predictions` (PostgreSQL) và thư mục artifact chuẩn hóa (`eval-report.v1`).
-> 2. Mọi logic mở rộng phục vụ vận hành production (Drift Triage, Data Simulator, Behavioral Gate, Continual Retraining Orchestrator, Dockerfiles, Nginx config, DB init/backup) được đặt tại `learnguard-platform/deploy/` và `learnguard-platform/scripts/`.
+> 2. Mọi logic mở rộng phục vụ vận hành production (Drift Triage, Data Simulator, Behavioral Gate, Continual Retraining Orchestrator, Dockerfiles, Nginx config, DB init/backup, Terraform cho cả Azure & DigitalOcean) được đặt tại `learnguard-platform/`.
+> 3. **Cloud-Portable Rule:** Không viết logic phụ thuộc nhà cung cấp cloud vào code ứng dụng (`BE-MLOPS`, `Data-ML-MLOPS`, `FE-MLOPS`). Cả **Option A (Azure PaaS)** và **Option B (DigitalOcean VM)** đều chạy cùng bộ container images, cùng schema/roles PostgreSQL và cùng biến môi trường cấu hình (`DATABASE_URL`, `LEARNGUARD_PG_DSN`, `EVALUATIONS_DIR`, `OULAD_DATA_DIR`). Tại mỗi thời điểm, operator chỉ cần triển khai lên **1 cloud đang có credit/tài khoản sẵn sàng** mà không phải chạy song song hay trả phí cả hai cloud.
 
 ---
 
 ## 4. Quy chuẩn Kỹ thuật Phần mềm (Software Engineering Conventions)
 
+Chi tiết chiến lược kỹ thuật và quy trình giao hàng xuyên repo xem tại [`04-devops/software-engineering-strategy.md`](04-devops/software-engineering-strategy.md).
+
 ### 4.1. Quản lý Phiên bản & Git Workflow
 1. **Nhánh (Branching Strategy):**
    - `main`: Nhánh production/release luôn ở trạng thái deploy được (protected branch).
-   - Nhánh phát triển: `feat/<scope>-<topic>`, `fix/<scope>-<topic>`, `ops/<scope>-<topic>`, `docs/<scope>-<topic>`.
+   - Nhánh phát triển theo quy ước task trong [`00-workflow.md`](00-workflow.md): `<TASK-ID>-<short-description-in-kebab-case>` hoặc `feat/<scope>-<topic>`, `fix/<scope>-<topic>`, `ops/<scope>-<topic>`, `docs/<scope>-<topic>`.
 2. **Chuẩn Commit (Conventional Commits):**
-   - Cú pháp: `<type>(<scope>): <imperative summary in English>`
+   - Cú pháp: `<type>(<scope>): <imperative summary in English>` (hoặc `<story-or-type> (<TASK-ID>): <summary>`).
    - Ví dụ:
      - `feat(mlops): add drift triage and champion-challenger retraining pipeline`
      - `feat(cicd): add digitalocean production deployment workflow with auto-rollback`
-     - `docs(adr): record migration to digitalocean droplet architecture`
-   - Tuyệt đối không commit `.env`, SSH private keys, database dumps, hoặc `.terraform/`.
+     - `docs(arch): formalize cloud-portable dual-cloud strategy for azure and digitalocean`
+   - Tuyệt đối không commit `.env`, SSH private keys, database dumps, `terraform.tfvars`, hoặc `.terraform/`.
 3. **Ngôn ngữ Tài liệu & Mã nguồn:**
    - **Tài liệu (`docs/`, `runbooks/`):** Tiếng Việt chuẩn xác, giữ nguyên thuật ngữ chuyên ngành tiếng Anh (`covariate shift`, `point-in-time correctness`, `immutable digest`, `blue-green deployment`, `abstention`).
    - **Mã nguồn (Python, Bash, Terraform, YAML, SQL, Dockerfile):** Tiếng Anh 100%, tuân thủ type annotations (`from __future__ import annotations`), docstring rõ ràng.
@@ -112,13 +116,14 @@ Dự án tuân thủ mô hình **Multi-Repo với Platform Orchestrator tách bi
    - Determinism: Cố định `random_state = 42`, `threadpool_limits(limits=1)` khi huấn luyện, sắp xếp khóa composite `(code_module, code_presentation, id_student)` bằng `mergesort` trước khi băm hoặc lấy mẫu.
 2. **Shell Script Standards:**
    - Mọi script `.sh` bắt buộc mở đầu bằng `#!/usr/bin/env bash` và `set -euo pipefail`.
-   - Thiết kế **Idempotent** (chạy lặp lại nhiều lần không gây lỗi trạng thái).
-   - Không bao giờ in secret (`DATABASE_URL`, `LLM_API_KEY`, `PGPASSWORD`, SSH key) ra stdout/logs; tắt `set -x` ở mọi khối lệnh xử lý biến nhạy cảm.
-3. **Container & Supply Chain Standards:**
-   - Multi-stage build giảm kích thước image và bề mặt tấn công.
-   - Chạy tiến trình ứng dụng bằng **non-root user** (`learnguard` UID 10001).
-   - Mọi service trong `docker-compose.prod.yml` bắt buộc khai báo `healthcheck`, `restart: unless-stopped`, giới hạn tài nguyên (`mem_limit`, `cpus`) và phân tách mạng (`lg_frontend_net` vs `lg_backend_net`).
-   - Ghim phiên bản image theo **immutable digest** (`@sha256:...`) hoặc release tag gắn liền với commit SHA trong `deploy/releases/prod.yaml`.
+   - Thiết kế **Idempotent** (chạy lặp lại nhiều lần không gây lỗi trạng thái) và hỗ trợ `--dry-run` để kiểm chứng trong CI.
+   - Không bao giờ in secret (`DATABASE_URL`, `LLM_API_KEY`, `PGPASSWORD`, SSH key, ACR/GHCR token) ra stdout/logs; tắt `set -x` ở mọi khối lệnh xử lý biến nhạy cảm.
+3. **Container & Supply Chain Standards (Dual-Cloud Compatible):**
+   - Multi-stage build giảm kích thước image và bề mặt tấn công (xem `deploy/docker/Dockerfile.{api,ml,fe}`).
+   - Chạy tiến trình ứng dụng bằng **non-root user** (`learnguard` UID/GID `10001`).
+   - Quét lỗ hổng container bằng **Trivy** (`exit-code: "1"`, `severity: CRITICAL,HIGH`) trước khi đẩy lên registry (`ghcr.io` hoặc `ACR`).
+   - Ghim phiên bản image theo **immutable digest** (`@sha256:...`) trong `deploy/releases/{dev,prod}.yaml` và `infra/env/dev/terraform.tfvars`.
+   - Khi chạy trên DigitalOcean Compose (`docker-compose.prod.yml`), mọi service bắt buộc khai báo `healthcheck`, `restart`, giới hạn tài nguyên (`mem_limit`, `cpus`) và phân tách mạng (`lg_frontend_net` vs `lg_backend_net` `internal: true`). Khi chạy trên Azure Container Apps (`infra/env/dev/apps.tf`), giữ nguyên VNet integration (`snet-cae`), non-root container & least-privilege DB DSN qua Key Vault secret reference.
 
 ---
 
@@ -147,19 +152,19 @@ Một schema tĩnh chỉ kiểm tra được tên cột và kiểu dữ liệu. 
    - Bắt buộc **100% Human Oversight**: cố vấn phải xem xét, chỉnh sửa hoặc phê duyệt (`accepted` / `rejected`), hệ thống không có bất kỳ luồng tự động gửi thông báo nào tới sinh viên.
 3. **Sau Triển khai (After Deployment):**
    - Ghi nhận telemetry đầy đủ (`llm_calls` lưu latency/tokens/cost; `audit_logs` lưu hành động; `release.provenance.json` theo dõi `realized_alert_rate`).
-   - Giám sát Data Drift & Alert-Rate Drift định kỳ; hỗ trợ rollback 1 lệnh cho cả Container Release lẫn Model Release.
+   - Giám sát Data Drift & Alert-Rate Drift định kỳ; hỗ trợ rollback nhanh cho cả Container Release lẫn Model Release trên cả Option A và Option B.
 
 ---
 
 ## 6. Tháp Kiểm thử 6 Tầng cho Hệ thống AI (6-Layer AI System Testing Pyramid — Lec 5 & Lec 6)
 
-Để ngăn chặn hiện tượng **"Green components, red system"** và **"Silent success"** (Lec 6 Slide 2–4), pipeline CI/CD bắt buộc thực thi 6 tầng kiểm thử:
+Để ngăn chặn hiện tượng **"Green components, red system"** và **"Silent success"** (Lec 6 Slide 2–4), pipeline CI/CD bắt buộc thực thi 6 tầng kiểm thử (xem đặc tả chi tiết tại [`06-testing/test-strategy-and-gates.md`](06-testing/test-strategy-and-gates.md)):
 
 | Tầng | Tên Tầng Kiểm thử | Phạm vi & Kỹ thuật | Tiêu chí Hard-Fail (Chặn Release/Deploy) |
 | :--- | :--- | :--- | :--- |
-| **L1** | **Unit & Determinism Tests** | Kiểm thử hàm đơn vị trong `Data-ML-MLOPS`, `BE-MLOPS`, `FE-MLOPS` (`tsc --noEmit && vite build`). | Bất kỳ unit test hoặc type-check nào thất bại. |
-| **L2** | **Semantic & Boundary Contract Tests** | Kiểm chứng hợp đồng giữa các thành phần: công thức `student_key` test vectors, schema 15 cột `prediction-batch.v1`, 4 giá trị `status`, schema `eval-report.v1`. | Lệch test vector `student_key`, thiếu cột bắt buộc, hoặc silent NaN/null trong output. |
+| **L1** | **Unit & Determinism Tests** | Kiểm thử hàm đơn vị trong `Data-ML-MLOPS`, `BE-MLOPS`, `FE-MLOPS` (`tsc --noEmit && vite build`), kèm kiểm tra tĩnh `ruff`, `bash -n`, `yaml`, `docker compose config`, `terraform validate`, `check_plan.py`. | Bất kỳ unit test, linter, guardrail, hoặc type-check nào thất bại. |
+| **L2** | **Semantic & Boundary Contract Tests** | Kiểm chứng hợp đồng giữa các thành phần: công thức `student_key` test vectors, schema cột `prediction-batch.v1`, 4 giá trị `status`, schema `eval-report.v1` (`tests/test_system_contracts.py`). | Lệch test vector `student_key`, thiếu cột bắt buộc, hoặc silent NaN/null trong output. |
 | **L3** | **Model Behavioral Testing (Lec 5)** | (1) **MFT**: Hồ sơ sinh viên rủi ro cực cao vs tích cực cực cao.<br>(2) **Invariance**: Hoán vị thứ tự dòng không đổi điểm rủi ro.<br>(3) **Directional**: Giảm số click hoặc giảm điểm trung bình không được làm giảm xác suất rủi ro.<br>(4) **SHAP Additivity** & **Fairness Slices**. | Vi phạm tính đơn điệu (Directional), sai số SHAP `> 1e-8`, hoặc `ROC-AUC < 0.70`. |
 | **L4** | **Drift & Retraining Pipeline Integration Tests** | Mô phỏng dữ liệu mới & drift (`data_simulator.py`) → Chẩn đoán (`drift_monitor.py`) → Tái huấn luyện (`retrain_pipeline.py`) → So sánh Champion vs Challenger. | Pipeline tự động retrain trên dữ liệu lỗi ngữ nghĩa (vi phạm Lec 4 Q20) hoặc promote model kém hơn Champion. |
 | **L5** | **Safeguard & Fault-Injection Recovery Tests (Lec 6)** | Kiểm thử cơ chế dự phòng khi LLM không khả dụng (`fallback_review`), dữ liệu thiếu (`insufficient_data`), độ không chắc chắn cao (`manual_review`), hoặc DB lỗi (`503`). | Hệ thống crash (HTTP 500), làm lộ secret trong log, hoặc đưa ra dự đoán sai khi thiếu dữ liệu. |
-| **L6** | **Post-Deploy Smoke & Rollback Verification** | Kiểm thử E2E sau khi deploy lên DigitalOcean VM (`/health`, `/predictions`, `/evaluations`, `/audit-logs`, SPA routing). | Healthcheck hoặc smoke test thất bại → Tự động kích hoạt `rollback-do.sh`. |
+| **L6** | **Post-Deploy Smoke & Rollback Verification (Dual-Cloud)** | Kiểm thử E2E sau khi deploy lên cloud mục tiêu đang chọn: `/health`, `/predictions`, `/evaluations`, `/audit-logs`, SPA routing. | **Option B (DO):** `smoke-test.sh` thất bại → tự động kích hoạt `rollback-do.sh`.<br>**Option A (Azure):** `smoke-and-rollback.ps1` thất bại → tự động revert Container App revision. |
