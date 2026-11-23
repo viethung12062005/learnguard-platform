@@ -16,7 +16,7 @@
 #   9. Automatically invokes `rollback-do.sh` if healthcheck or smoke test fails!
 #
 # Usage:
-#   ./deploy-do.sh [--dry-run] [--skip-backup] [--api-image <img@sha256:...>] [--fe-image <img@sha256:...>] [--ml-image <img@sha256:...>]
+#   ./deploy-do.sh [--dry-run] [--skip-backup] [--tls] [--api-image <img@sha256:...>] [--fe-image <img@sha256:...>] [--ml-image <img@sha256:...>]
 # =============================================================================
 set -euo pipefail
 
@@ -24,11 +24,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_DIR="${LG_COMPOSE_DIR:-${PLATFORM_ROOT}/deploy/digitalocean}"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.prod.yml"
+TLS_COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.tls.yml"
 ENV_FILE="${COMPOSE_DIR}/.env"
 LAST_GOOD_FILE="${COMPOSE_DIR}/last_good_release.env"
 
 DRY_RUN=false
 SKIP_BACKUP=false
+ENABLE_TLS_ARG=false
 ARG_API_IMAGE=""
 ARG_FE_IMAGE=""
 ARG_ML_IMAGE=""
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-backup)
       SKIP_BACKUP=true
+      shift
+      ;;
+    --tls)
+      ENABLE_TLS_ARG=true
       shift
       ;;
     --api-image)
@@ -58,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --compose-dir)
       COMPOSE_DIR="$2"
       COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.prod.yml"
+      TLS_COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.tls.yml"
       ENV_FILE="${COMPOSE_DIR}/.env"
       LAST_GOOD_FILE="${COMPOSE_DIR}/last_good_release.env"
       shift 2
@@ -116,6 +123,49 @@ is_placeholder_digest() {
   local img="$1"
   [[ "${img}" == *"1111111111111111"* || "${img}" == *"2222222222222222"* || "${img}" == *"3333333333333333"* || "${img}" == *"0000000000000000"* ]]
 }
+
+check_env_placeholders() {
+  local file="$1"
+  local line key val
+  local bad_keys=()
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]] && continue
+    if [[ "${line}" == *=* ]]; then
+      key="${line%%=*}"
+      val="${line#*=}"
+      if [[ "${val}" == *REPLACE_WITH_* ]]; then
+        bad_keys+=("${key}")
+      fi
+    fi
+  done < "${file}"
+
+  if [[ "${#bad_keys[@]}" -gt 0 ]]; then
+    log "ERROR: ${file} still contains REPLACE_WITH_* placeholder(s) for key(s): ${bad_keys[*]}"
+    log "ERROR: Run scripts/do/init-prod-secrets.sh and populate all required secrets before deploying."
+    exit 1
+  fi
+}
+
+# Fail-fast guard before touching the running stack (skipped only in --dry-run)
+if [[ "${DRY_RUN}" == "false" ]]; then
+  if is_placeholder_digest "${TARGET_API_IMAGE}" || is_placeholder_digest "${TARGET_FE_IMAGE}" || is_placeholder_digest "${TARGET_ML_IMAGE}"; then
+    log "ERROR: Placeholder container digest detected in TARGET_*_IMAGE. Provide real GHCR @sha256 digests before deploying."
+    exit 1
+  fi
+  check_env_placeholders "${ENV_FILE}"
+else
+  log "[DRY-RUN] Skipping fail-fast placeholder guard for target digests and ${ENV_FILE}."
+fi
+
+COMPOSE_CMD=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
+if [[ "${ENABLE_TLS_ARG}" == "true" || "${ENABLE_TLS:-false}" == "true" ]]; then
+  if [[ -f "${TLS_COMPOSE_FILE}" ]]; then
+    COMPOSE_CMD+=(-f "${TLS_COMPOSE_FILE}")
+    log "TLS overlay enabled: ${TLS_COMPOSE_FILE}"
+  else
+    log "WARNING: TLS enabled (ENABLE_TLS=true or --tls) but ${TLS_COMPOSE_FILE} not found; proceeding without TLS overlay."
+  fi
+fi
 
 # -----------------------------------------------------------------------------
 # 1. Record current release into last_good_release.env before modifying stack
@@ -199,10 +249,10 @@ fi
 # -----------------------------------------------------------------------------
 log "3/7 Pulling container images from registry..."
 if [[ "${DRY_RUN}" == "false" ]]; then
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull postgres api frontend
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" --profile batch pull ml-worker || true
+  "${COMPOSE_CMD[@]}" pull postgres api frontend
+  "${COMPOSE_CMD[@]}" --profile batch pull ml-worker || true
 else
-  log "[DRY-RUN] Would run: docker compose -f ${COMPOSE_FILE} pull postgres api frontend (and --profile batch pull ml-worker)"
+  log "[DRY-RUN] Would run: ${COMPOSE_CMD[*]} pull postgres api frontend (and --profile batch pull ml-worker)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -210,7 +260,7 @@ fi
 # -----------------------------------------------------------------------------
 log "4/7 Starting PostgreSQL and executing Alembic migrations + least-privilege role verification..."
 if [[ "${DRY_RUN}" == "false" ]]; then
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d postgres
+  "${COMPOSE_CMD[@]}" up -d postgres
 
   # Wait up to 60s for postgres healthcheck
   PG_HEALTHY=false
@@ -228,11 +278,11 @@ if [[ "${DRY_RUN}" == "false" ]]; then
   fi
 
   # Re-apply idempotent init-db.sh to guarantee ml_predictions & default privileges before Alembic
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" exec -T postgres bash /docker-entrypoint-initdb.d/10-init-db.sh \
+  "${COMPOSE_CMD[@]}" exec -T postgres bash /docker-entrypoint-initdb.d/10-init-db.sh \
     || trigger_auto_rollback "init_db_roles_failure"
 
   # Run Alembic migrations
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" run --rm db-migrate \
+  "${COMPOSE_CMD[@]}" run --rm db-migrate \
     || trigger_auto_rollback "alembic_db_migration_failure"
 else
   log "[DRY-RUN] Would start postgres, verify init-db.sh roles, and run db-migrate (alembic upgrade head)"
@@ -243,10 +293,10 @@ fi
 # -----------------------------------------------------------------------------
 log "5/7 Performing rolling update of api and frontend containers..."
 if [[ "${DRY_RUN}" == "false" ]]; then
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans api frontend \
+  "${COMPOSE_CMD[@]}" up -d --remove-orphans api frontend \
     || trigger_auto_rollback "compose_up_api_frontend"
 else
-  log "[DRY-RUN] Would run: docker compose -f ${COMPOSE_FILE} up -d --remove-orphans api frontend"
+  log "[DRY-RUN] Would run: ${COMPOSE_CMD[*]} up -d --remove-orphans api frontend"
 fi
 
 # -----------------------------------------------------------------------------

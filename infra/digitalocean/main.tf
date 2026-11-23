@@ -61,7 +61,8 @@ resource "digitalocean_volume_attachment" "learnguard_data_attach" {
 
 # -----------------------------------------------------------------------------
 # 4. DigitalOcean Cloud Firewall (Defense-in-Depth Perimeter)
-#    - Allow HTTP (80) & HTTPS (443) publicly to Nginx reverse proxy
+#    - Allow HTTP (80) & HTTPS (443) to Nginx reverse proxy from allowed_web_cidrs
+#      (restrictable to team/office/VPN CIDRs until BE-08/BE-09 JWT auth ships)
 #    - Allow SSH (22) strictly from operator & CI runner CIDRs
 #    - Block all direct external access to 5432 (Postgres), 8000 (FastAPI),
 #      11434 (Ollama), and 9090 (Prometheus)
@@ -73,13 +74,13 @@ resource "digitalocean_firewall" "learnguard_fw" {
   inbound_rule {
     protocol         = "tcp"
     port_range       = "80"
-    source_addresses = ["0.0.0.0/0", "::/0"]
+    source_addresses = var.allowed_web_cidrs
   }
 
   inbound_rule {
     protocol         = "tcp"
     port_range       = "443"
-    source_addresses = ["0.0.0.0/0", "::/0"]
+    source_addresses = var.allowed_web_cidrs
   }
 
   inbound_rule {

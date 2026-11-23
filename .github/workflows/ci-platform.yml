@@ -68,7 +68,7 @@ jobs:
           print("Release manifests validated successfully.")
           PY
 
-      - name: Validate DigitalOcean Docker Compose configurations (prod & staging)
+      - name: Validate DigitalOcean Docker Compose configurations (prod, staging & tls)
         run: |
           docker compose \
             --env-file deploy/digitalocean/.env.prod.example \
@@ -79,10 +79,16 @@ jobs:
             -f deploy/digitalocean/docker-compose.prod.yml \
             -f deploy/digitalocean/docker-compose.staging.yml \
             config -q
+          docker compose \
+            --env-file deploy/digitalocean/.env.prod.example \
+            -f deploy/digitalocean/docker-compose.prod.yml \
+            -f deploy/digitalocean/docker-compose.tls.yml \
+            config -q
 
       - name: Dry-run CD operational scripts
         run: |
           ./scripts/do/bootstrap-vm.sh --dry-run
+          bash ./scripts/do/init-prod-secrets.sh --dry-run
           ./scripts/cd/backup-db.sh --dry-run
           ./scripts/cd/restore-db.sh --file /tmp/dummy.sql.gz --dry-run
           ./scripts/cd/smoke-test.sh --dry-run

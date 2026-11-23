@@ -59,15 +59,43 @@ variable "ssh_key_fingerprints" {
 }
 
 variable "operator_ssh_public_key" {
-  description = "SSH public key injected into cloud-init for the non-root lgops user."
+  description = "SSH public key injected into cloud-init for the non-root lgops user. Must be configured explicitly in terraform.tfvars."
   type        = string
-  default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderReplaceWithYourActualPublicKey lgops@learnguard"
+
+  validation {
+    condition = (
+      (startswith(var.operator_ssh_public_key, "ssh-ed25519 ") || startswith(var.operator_ssh_public_key, "ssh-rsa ")) &&
+      !strcontains(var.operator_ssh_public_key, "Placeholder")
+    )
+    error_message = "operator_ssh_public_key must start with 'ssh-ed25519 ' or 'ssh-rsa ' and must not contain 'Placeholder'."
+  }
 }
 
 variable "allowed_ssh_cidrs" {
   description = "List of CIDR blocks permitted to reach TCP port 22 (Operator IP + GitHub Actions deploy runners). Must be configured explicitly in terraform.tfvars."
   type        = list(string)
-  default     = []
+
+  validation {
+    condition = (
+      length(var.allowed_ssh_cidrs) > 0 &&
+      alltrue([
+        for cidr in var.allowed_ssh_cidrs :
+        !contains(["0.0.0.0/0", "::/0"], trimspace(cidr))
+      ])
+    )
+    error_message = "allowed_ssh_cidrs must contain at least one CIDR block and must not contain unrestricted 0.0.0.0/0 or ::/0."
+  }
+}
+
+variable "allowed_web_cidrs" {
+  description = "List of CIDR blocks permitted to reach HTTP (80) and HTTPS (443). Operators can restrict this to team/office/VPN CIDRs as a pre-auth perimeter control until BE-08/BE-09 JWT authentication ships."
+  type        = list(string)
+  default     = ["0.0.0.0/0", "::/0"]
+
+  validation {
+    condition     = length(var.allowed_web_cidrs) > 0
+    error_message = "allowed_web_cidrs must contain at least one CIDR block."
+  }
 }
 
 variable "enable_backups" {

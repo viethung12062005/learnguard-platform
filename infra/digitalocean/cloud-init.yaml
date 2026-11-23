@@ -4,10 +4,10 @@
 #
 # Automatically executed on first boot:
 #   1. Creates non-root operations user `lgops` with Docker & passwordless sudo
-#   2. Hardens SSH daemon (key-only, no root login)
+#   2. Hardens SSH daemon (key-only, no root login) & configures 4 GB swapfile
 #   3. Configures UFW host firewall + Fail2ban
-#   4. Installs Docker Engine & Docker Compose v2 plugin
-#   5. Prepares `/opt/learnguard` directory layout and weekly ML drift systemd timer
+#   4. Installs Docker Engine & Compose v2 plugin with json-file log rotation
+#   5. Prepares `/opt/learnguard` layout + ML batch & daily DB backup systemd timers
 # =============================================================================
 
 package_update: true
@@ -78,7 +78,72 @@ write_files:
       [Install]
       WantedBy=timers.target
 
+  - path: /etc/systemd/system/learnguard-db-backup.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=LearnGuard Daily PostgreSQL Backup with Checksum & Retention
+      After=docker.service
+      Requires=docker.service
+      ConditionPathExists=/opt/learnguard/scripts/cd/backup-db.sh
+
+      [Service]
+      Type=oneshot
+      User=lgops
+      WorkingDirectory=/opt/learnguard/deploy/digitalocean
+      ExecStart=/opt/learnguard/scripts/cd/backup-db.sh --compose-dir /opt/learnguard/deploy/digitalocean --backup-dir /opt/learnguard/data/backups
+      StandardOutput=journal
+      StandardError=journal
+      SyslogIdentifier=learnguard-db-backup
+
+  - path: /etc/systemd/system/learnguard-db-backup.timer
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Run LearnGuard Daily PostgreSQL Backup at 02:30 UTC
+
+      [Timer]
+      OnCalendar=*-*-* 02:30:00 UTC
+      Persistent=true
+      RandomizedDelaySec=120
+
+      [Install]
+      WantedBy=timers.target
+
+  - path: /etc/sysctl.d/99-learnguard-swap.conf
+    permissions: "0644"
+    content: |
+      vm.swappiness=10
+
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "5"
+        },
+        "live-restore": true
+      }
+
 runcmd:
+  - |
+    set -euo pipefail
+    if [ ! -f /swapfile ]; then
+      fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
+    fi
+    chmod 600 /swapfile
+    if ! blkid /swapfile 2>/dev/null | grep -q 'TYPE="swap"'; then
+      mkswap /swapfile
+    fi
+    if ! swapon --show=NAME --noheadings | grep -qx '/swapfile'; then
+      swapon /swapfile
+    fi
+    if ! grep -qs '^/swapfile ' /etc/fstab; then
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+    sysctl -p /etc/sysctl.d/99-learnguard-swap.conf || true
   - mkdir -p /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   - chmod a+r /etc/apt/keyrings/docker.gpg
@@ -98,23 +163,23 @@ runcmd:
   - |
     set -euo pipefail
     DATA_ROOT="/opt/learnguard/data"
-    mkdir -p "${DATA_ROOT}"
+    mkdir -p "$${DATA_ROOT}"
     DO_VOL="/dev/disk/by-id/scsi-0DO_Volume_learnguard-${environment}-data-vol"
-    if [ ! -e "${DO_VOL}" ]; then
+    if [ ! -e "$${DO_VOL}" ]; then
       DO_VOL="$(ls /dev/disk/by-id/scsi-0DO_Volume_* 2>/dev/null | head -n 1 || true)"
     fi
-    if [ -n "${DO_VOL}" ] && [ -e "${DO_VOL}" ]; then
-      if ! blkid "${DO_VOL}" >/dev/null 2>&1; then
-        mkfs.ext4 -F "${DO_VOL}"
+    if [ -n "$${DO_VOL}" ] && [ -e "$${DO_VOL}" ]; then
+      if ! blkid "$${DO_VOL}" >/dev/null 2>&1; then
+        mkfs.ext4 -F "$${DO_VOL}"
       fi
-      if ! grep -qs " ${DATA_ROOT} " /etc/fstab; then
-        echo "${DO_VOL} ${DATA_ROOT} ext4 defaults,nofail,discard,noatime 0 2" >> /etc/fstab
+      if ! grep -qs " $${DATA_ROOT} " /etc/fstab; then
+        echo "$${DO_VOL} $${DATA_ROOT} ext4 defaults,nofail,discard,noatime 0 2" >> /etc/fstab
       fi
-      if ! mountpoint -q "${DATA_ROOT}"; then
-        mount "${DATA_ROOT}"
+      if ! mountpoint -q "$${DATA_ROOT}"; then
+        mount "$${DATA_ROOT}"
       fi
     fi
-  - mkdir -p /opt/learnguard/deploy/digitalocean /opt/learnguard/deploy/db /opt/learnguard/deploy/ml /opt/learnguard/deploy/releases
+  - mkdir -p /opt/learnguard/deploy/digitalocean /opt/learnguard/deploy/docker /opt/learnguard/deploy/db /opt/learnguard/deploy/ml /opt/learnguard/deploy/releases /opt/learnguard/certs /var/www/certbot
   - mkdir -p /opt/learnguard/scripts/cd /opt/learnguard/scripts/do
   - mkdir -p /opt/learnguard/data/oulad /opt/learnguard/data/backups
   - mkdir -p /opt/learnguard/data/artifacts/ingestion_m1 /opt/learnguard/data/artifacts/feature_snapshot_m2
@@ -124,4 +189,4 @@ runcmd:
   - chown -R lgops:lgops /opt/learnguard
   - chown -R 10001:10001 /opt/learnguard/data/oulad /opt/learnguard/data/artifacts
   - systemctl daemon-reload
-  - systemctl enable --now learnguard-ml-batch.timer
+  - systemctl enable --now learnguard-ml-batch.timer learnguard-db-backup.timer

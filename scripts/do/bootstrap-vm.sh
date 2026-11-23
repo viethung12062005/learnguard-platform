@@ -9,10 +9,12 @@
 # Responsibilities:
 #   1. Creates non-root operations user (`lgops`) with Docker & sudo permissions
 #   2. Installs Docker Engine + Docker Compose v2 plugin, UFW, Fail2ban, jq, rsync
-#   3. Configures UFW host firewall (Allow 22, 80, 443; Deny 5432, 8000, 11434, 9090)
-#   4. Creates standardized `/opt/learnguard` directory hierarchy with UID 10001 ownership
-#   5. Installs systemd timer `learnguard-ml-batch.timer` (weekly drift & retraining)
-#      and daily PostgreSQL backup cron job (`/etc/cron.d/learnguard-db-backup`).
+#   3. Writes `/etc/docker/daemon.json` (`json-file` log rotation + `live-restore`) if missing
+#   4. Provisions idempotent 4 GB `/swapfile` with `vm.swappiness=10`
+#   5. Configures UFW host firewall (Allow 22, 80, 443; Deny 5432, 8000, 11434, 9090)
+#   6. Creates `/opt/learnguard` hierarchy (`certs` at 750, data UID 10001 ownership)
+#   7. Installs systemd timers `learnguard-ml-batch.timer` (weekly Mon 06:30 UTC)
+#      and `learnguard-db-backup.timer` (daily 02:30 UTC, journalctl logging).
 # =============================================================================
 set -euo pipefail
 
@@ -27,12 +29,24 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --operator-user)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: --operator-user requires a value" >&2
+        exit 1
+      fi
       OPERATOR_USER="$2"
       shift 2
       ;;
     --root-dir)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: --root-dir requires a value" >&2
+        exit 1
+      fi
       LG_ROOT="$2"
       shift 2
+      ;;
+    -h|--help)
+      echo "Usage: sudo bash bootstrap-vm.sh [--dry-run] [--operator-user lgops] [--root-dir /opt/learnguard]"
+      exit 0
       ;;
     *)
       echo "Unknown option: $1" >&2
@@ -63,7 +77,7 @@ fi
 # -----------------------------------------------------------------------------
 # 1. Create non-root operator user
 # -----------------------------------------------------------------------------
-log "1/6 Ensuring operator user '${OPERATOR_USER}' exists..."
+log "1/8 Ensuring operator user '${OPERATOR_USER}' exists..."
 if ! id -u "${OPERATOR_USER}" >/dev/null 2>&1; then
   run_cmd useradd --create-home --shell /bin/bash --groups sudo "${OPERATOR_USER}"
 fi
@@ -83,7 +97,7 @@ fi
 # -----------------------------------------------------------------------------
 # 2. Install OS packages and Docker Engine + Compose v2
 # -----------------------------------------------------------------------------
-log "2/6 Installing base packages and Docker Engine..."
+log "2/8 Installing base packages and Docker Engine..."
 if [[ "${DRY_RUN}" == "false" ]]; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
@@ -95,7 +109,8 @@ if [[ "${DRY_RUN}" == "false" ]]; then
     chmod a+r /etc/apt/keyrings/docker.gpg
     # shellcheck disable=SC1091
     UBUNTU_CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME}")"
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME} stable" \
+    ARCH="$(dpkg --print-architecture)"
+    echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME} stable" \
       > /etc/apt/sources.list.d/docker.list
     apt-get update -y
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -108,9 +123,74 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 3. Configure UFW Host Firewall & Fail2ban
+# 3. Configure Docker Engine Log Rotation & Live-Restore (/etc/docker/daemon.json)
 # -----------------------------------------------------------------------------
-log "3/6 Configuring UFW host firewall and Fail2ban..."
+log "3/8 Configuring Docker daemon log rotation (/etc/docker/daemon.json)..."
+DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
+if [[ "${DRY_RUN}" == "true" ]]; then
+  if [[ -f "${DOCKER_DAEMON_JSON}" ]]; then
+    log "[DRY-RUN] ${DOCKER_DAEMON_JSON} already exists; would preserve existing configuration."
+  else
+    log "[DRY-RUN] Would write ${DOCKER_DAEMON_JSON} (json-file max-size=10m, max-file=5, live-restore=true) and reload Docker."
+  fi
+else
+  if [[ ! -f "${DOCKER_DAEMON_JSON}" ]]; then
+    mkdir -p /etc/docker
+    cat > "${DOCKER_DAEMON_JSON}" <<'EOF'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "5"
+  },
+  "live-restore": true
+}
+EOF
+    chmod 0644 "${DOCKER_DAEMON_JSON}"
+    if systemctl is-active --quiet docker; then
+      systemctl reload docker || systemctl restart docker
+    fi
+  else
+    log "${DOCKER_DAEMON_JSON} already exists; preserving existing configuration."
+  fi
+fi
+
+# -----------------------------------------------------------------------------
+# 4. Provision Idempotent 4 GB Swapfile & Tuned Swappiness
+# -----------------------------------------------------------------------------
+log "4/8 Ensuring 4 GB /swapfile and vm.swappiness=10 are configured..."
+SWAP_FILE="/swapfile"
+SYSCTL_SWAP_CONF="/etc/sysctl.d/99-learnguard-swap.conf"
+if [[ "${DRY_RUN}" == "true" ]]; then
+  log "[DRY-RUN] Would ensure 4 GB ${SWAP_FILE} (fallocate -l 4G, chmod 600, mkswap, swapon), persist in /etc/fstab, and set vm.swappiness=10 in ${SYSCTL_SWAP_CONF}."
+else
+  if [[ ! -f "${SWAP_FILE}" ]]; then
+    fallocate -l 4G "${SWAP_FILE}" || dd if=/dev/zero of="${SWAP_FILE}" bs=1M count=4096 status=none
+    chmod 0600 "${SWAP_FILE}"
+    mkswap "${SWAP_FILE}"
+  else
+    chmod 0600 "${SWAP_FILE}"
+  fi
+
+  if ! swapon --show=NAME --noheadings 2>/dev/null | grep -qx "${SWAP_FILE}"; then
+    swapon "${SWAP_FILE}"
+  fi
+
+  if ! grep -qs "^${SWAP_FILE}[[:space:]]" /etc/fstab; then
+    echo "${SWAP_FILE} none swap sw 0 0" >> /etc/fstab
+  fi
+
+  if [[ ! -f "${SYSCTL_SWAP_CONF}" ]] || ! grep -qs '^vm\.swappiness=10$' "${SYSCTL_SWAP_CONF}"; then
+    printf 'vm.swappiness=10\n' > "${SYSCTL_SWAP_CONF}"
+    chmod 0644 "${SYSCTL_SWAP_CONF}"
+  fi
+  sysctl -p "${SYSCTL_SWAP_CONF}" >/dev/null
+fi
+
+# -----------------------------------------------------------------------------
+# 5. Configure UFW Host Firewall & Fail2ban
+# -----------------------------------------------------------------------------
+log "5/8 Configuring UFW host firewall and Fail2ban..."
 if [[ "${DRY_RUN}" == "false" ]]; then
   ufw default deny incoming
   ufw default allow outgoing
@@ -126,9 +206,9 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 4. Mount Block Storage (if attached) & Create /opt/learnguard directory layout
+# 6. Mount Block Storage (if attached) & Create /opt/learnguard directory layout
 # -----------------------------------------------------------------------------
-log "4/6 Checking DigitalOcean Block Storage volume and creating directory hierarchy under ${LG_ROOT}..."
+log "6/8 Checking DigitalOcean Block Storage volume and creating directory hierarchy under ${LG_ROOT}..."
 DATA_MOUNT="${LG_ROOT}/data"
 run_cmd mkdir -p "${DATA_MOUNT}"
 
@@ -150,6 +230,7 @@ if [[ -n "${DO_VOL}" && -e "${DO_VOL}" ]]; then
 fi
 
 DIRS=(
+  "${LG_ROOT}/certs"
   "${LG_ROOT}/deploy/digitalocean"
   "${LG_ROOT}/deploy/docker"
   "${LG_ROOT}/deploy/db"
@@ -175,14 +256,17 @@ done
 
 if [[ "${DRY_RUN}" == "false" ]]; then
   chown -R "${OPERATOR_USER}:${OPERATOR_USER}" "${LG_ROOT}"
+  chmod 0750 "${LG_ROOT}/certs"
   # Container non-root user `learnguard` runs as UID 10001
   chown -R 10001:10001 "${LG_ROOT}/data/oulad" "${LG_ROOT}/data/artifacts"
+else
+  log "[DRY-RUN] Would set ownership ${OPERATOR_USER}:${OPERATOR_USER} on ${LG_ROOT}, chmod 750 ${LG_ROOT}/certs, and UID 10001 on data dirs"
 fi
 
 # -----------------------------------------------------------------------------
-# 5. Configure Systemd Service & Timer for Weekly Drift & Retraining Pipeline
+# 7. Configure Systemd Service & Timer for Weekly Drift & Retraining Pipeline
 # -----------------------------------------------------------------------------
-log "5/6 Configuring systemd service and timer (learnguard-ml-batch)..."
+log "7/8 Configuring systemd service and timer (learnguard-ml-batch)..."
 if [[ "${DRY_RUN}" == "false" ]]; then
   cat > /etc/systemd/system/learnguard-ml-batch.service <<EOF
 [Unit]
@@ -219,18 +303,46 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 6. Configure Daily Automated PostgreSQL Backup Cron Job
+# 8. Configure Daily Automated PostgreSQL Backup Systemd Timer (Journal Logging)
 # -----------------------------------------------------------------------------
-log "6/6 Installing daily database backup cron job..."
+log "8/8 Replacing legacy cron job with systemd timer (learnguard-db-backup)..."
 if [[ "${DRY_RUN}" == "false" ]]; then
-  cat > /etc/cron.d/learnguard-db-backup <<EOF
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-15 2 * * * ${OPERATOR_USER} ${LG_ROOT}/scripts/cd/backup-db.sh >> /var/log/learnguard-backup.log 2>&1
+  # Remove legacy cron job that attempted to write to root-owned /var/log/learnguard-backup.log
+  rm -f /etc/cron.d/learnguard-db-backup
+
+  cat > /etc/systemd/system/learnguard-db-backup.service <<EOF
+[Unit]
+Description=LearnGuard Daily Automated PostgreSQL Backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=${OPERATOR_USER}
+WorkingDirectory=${LG_ROOT}
+ExecStart=${LG_ROOT}/scripts/cd/backup-db.sh --compose-dir ${LG_ROOT}/deploy/digitalocean
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=learnguard-db-backup
 EOF
-  chmod 0644 /etc/cron.d/learnguard-db-backup
+
+  cat > /etc/systemd/system/learnguard-db-backup.timer <<EOF
+[Unit]
+Description=Run LearnGuard Daily PostgreSQL Backup at 02:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now learnguard-db-backup.timer
 else
-  log "[DRY-RUN] Would write /etc/cron.d/learnguard-db-backup"
+  log "[DRY-RUN] Would remove /etc/cron.d/learnguard-db-backup and write /etc/systemd/system/learnguard-db-backup.{service,timer} (daily 02:30 UTC, Persistent=true)"
 fi
 
 log "Bootstrap completed successfully."

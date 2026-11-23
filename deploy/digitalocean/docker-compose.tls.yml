@@ -1,0 +1,19 @@
+# LearnGuard — TLS/HTTPS Override for Docker Compose (DigitalOcean Production)
+# Usage:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.tls.yml up -d
+#
+# Prerequisites on Droplet VM:
+#   1. Place TLS certificate files at ${TLS_CERT_DIR:-/opt/learnguard/certs}:
+#      - fullchain.pem
+#      - privkey.pem
+#      (Compatible with both Cloudflare Origin CA certificates and Let's Encrypt symlinks)
+#   2. Ensure /var/www/certbot exists for ACME HTTP-01 challenge renewals.
+
+services:
+  frontend:
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ../docker/nginx.fe.tls.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${TLS_CERT_DIR:-/opt/learnguard/certs}:/etc/nginx/certs:ro
+      - /var/www/certbot:/var/www/certbot:ro

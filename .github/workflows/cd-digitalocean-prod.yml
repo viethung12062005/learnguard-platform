@@ -104,8 +104,15 @@ jobs:
             echo "has_host=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Fail fast if production deploy requested without DO_HOST secret
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false && steps.check_vm.outputs.has_host == 'false'
+        run: |
+          echo "::error::Production deploy failed: DO_HOST secret is not configured in GitHub Environment 'production' (and dry_run=false)."
+          echo "Configure DO_HOST, DO_USER, and DO_SSH_KEY in Settings -> Environments -> production, or re-run with dry_run=true."
+          exit 1
+
       - name: Execute local dry-run deployment verification
-        if: inputs.dry_run == true || steps.check_vm.outputs.has_host == 'false'
+        if: inputs.dry_run == true || (github.event_name != 'workflow_dispatch' && steps.check_vm.outputs.has_host == 'false')
         run: |
           ./scripts/cd/deploy-do.sh \
             --dry-run \
@@ -149,7 +156,7 @@ jobs:
           DO_USER: ${{ secrets.DO_USER || 'lgops' }}
           DO_PORT: ${{ secrets.DO_PORT || '22' }}
           GHCR_PAT: ${{ secrets.GHCR_READ_TOKEN || secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
+          GHCR_USER: ${{ vars.GHCR_USER || github.repository_owner }}
           API_IMG: ${{ needs.resolve-release-manifest.outputs.api_image }}
           FE_IMG: ${{ needs.resolve-release-manifest.outputs.fe_image }}
           ML_IMG: ${{ needs.resolve-release-manifest.outputs.ml_image }}

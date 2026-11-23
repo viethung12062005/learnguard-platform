@@ -16,9 +16,20 @@ ssh_key_fingerprints = [
   "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
 ]
 
-operator_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIReplaceWithOperatorAndGitHubActionsDeployPublicKey lgops@learnguard"
+# Public SSH key for the non-root `lgops` operator user (generate via: ssh-keygen -t ed25519 -C "lgops@learnguard").
+# Must start with `ssh-ed25519 ` or `ssh-rsa ` and contain your actual public key.
+operator_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl lgops@learnguard"
 
-# Restrict port 22 to operator workstation IPs and GitHub Actions runner CIDR ranges
+# Restrict port 22 strictly to operator workstation IPs and GitHub Actions runner CIDRs.
+# Note: 0.0.0.0/0 and ::/0 are rejected by Terraform validation.
 allowed_ssh_cidrs = [
   "203.0.113.10/32"
 ]
+
+# Pre-Auth Perimeter Control for HTTP (80) and HTTPS (443):
+# Restrict to team/office/VPN CIDRs (or Cloudflare edge CIDRs) until BE-08/BE-09 JWT auth ships.
+# Use ["0.0.0.0/0", "::/0"] only when public access is intended.
+allowed_web_cidrs = [
+  "203.0.113.0/24"
+]
+# allowed_web_cidrs = ["0.0.0.0/0", "::/0"]
